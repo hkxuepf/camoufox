@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: "Chromium Kernel Version Tag (e.g. v155.0.8059.39)"
-        required: true
+        description: "Chromium Kernel Version Tag"
+        required: false
+        type: string
         default: "155.0.8059.39"
       upload_release:
         description: "Upload artifacts to GitHub Releases"

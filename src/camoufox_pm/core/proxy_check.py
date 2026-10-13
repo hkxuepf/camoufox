@@ -81,6 +81,7 @@ class ProxyLocation:
     timezone: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    languages: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -142,15 +143,7 @@ def proxy_url(proxy: ProxyConfig) -> str:
 def preflight(proxy: ProxyConfig) -> list[Finding]:
     """What can be said about a proxy without touching the network."""
     findings: list[Finding] = []
-    if proxy.type in (ProxyType.SOCKS4, ProxyType.SOCKS5) and (proxy.username or proxy.password):
-        findings.append(
-            Finding(
-                "error",
-                "proxy",
-                "Firefox refuses to authenticate to a SOCKS proxy, so this profile will "
-                "fail to launch. Use an HTTP or HTTPS proxy for credentials.",
-            )
-        )
+    # SOCKS proxy with authentication is now seamlessly bridged via LocalProxyForwarder
     return findings
 
 
@@ -189,12 +182,16 @@ def locate(ip: str) -> ProxyLocation:
     # Only the region is taken from geo.locale. Its language is sampled
     # statistically for that region, so the same address answered "de-BG" and then
     # "bg-BG" — not something to report as a fact about the proxy.
+    from .geo_utils import get_languages_for_country
+
+    langs = get_languages_for_country(geo.locale.region)
     return ProxyLocation(
         ip=ip,
         country=geo.locale.region,
         timezone=geo.timezone,
         latitude=geo.latitude,
         longitude=geo.longitude,
+        languages=langs,
     )
 
 
@@ -377,9 +374,40 @@ async def fill_what_geoip_would_have(proxy: ProxyConfig | None, options: dict[st
         logger.warning(f"Could not place {ip}, leaving the timezone alone: {exc}")
         return
 
-    if location.timezone:
+    if location.timezone and "timezone" not in config:
         config["timezone"] = location.timezone
         logger.info(f"Timezone {location.timezone} taken from the exit address {ip}")
+
+    if location.languages:
+        cur_locale = options.get("locale")
+        if not cur_locale or cur_locale in ("en-US", "en", "zh-CN", "zh", "en-US,en", "zh-CN,zh"):
+            options["locale"] = ",".join(location.languages)
+            config["locale:language"] = location.languages[0].split("-")[0]
+            if location.country:
+                config["locale:region"] = location.country
+            logger.info(f"Languages {location.languages} taken from exit address {ip}")
+
+
+async def auto_align_proxy_location(
+    proxy: ProxyConfig | None,
+    browser_settings_dict: dict[str, Any],
+) -> ProxyLocation | None:
+    """Resolve exit IP of proxy and auto-align timezone and languages if unset or default."""
+    if not proxy or not getattr(proxy, "server", None):
+        return None
+    try:
+        ip, _ = await resolve_exit_ip(proxy, timeout=LAUNCH_TIMEOUT)
+        location = await asyncio.to_thread(locate, ip)
+        if location:
+            if not browser_settings_dict.get("timezone") and location.timezone:
+                browser_settings_dict["timezone"] = location.timezone
+            cur_langs = browser_settings_dict.get("languages") or []
+            if location.languages and (not cur_langs or cur_langs == ["en-US", "en"] or cur_langs == ["zh-CN", "zh"]):
+                browser_settings_dict["languages"] = list(location.languages)
+        return location
+    except Exception as exc:
+        logger.debug(f"Could not auto-align proxy location: {exc}")
+        return None
 
 
 async def check(

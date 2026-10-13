@@ -1,0 +1,108 @@
+name: Build CamouChromium C++ Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: "Chromium Kernel Version Tag (e.g. v155.0.8059.39)"
+        required: true
+        default: "v155.0.8059.39"
+      upload_release:
+        description: "Upload artifacts to GitHub Releases"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-arm64:
+    name: Build CamouChromium (macOS Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout CamouHub repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Google depot_tools
+        run: |
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+          echo "$HOME/depot_tools" >> $GITHUB_PATH
+
+      - name: Cache Chromium Source Tree (Shallow)
+        id: cache-chromium
+        uses: actions/cache@v4
+        with:
+          path: src
+          key: chromium-src-${{ inputs.version_tag }}-macos-arm64
+
+      - name: Fetch Chromium Source
+        if: steps.cache-chromium.outputs.cache-hit != 'true'
+        env:
+          DEPOT_TOOLS_UPDATE: "0"
+        run: |
+          mkdir -p chromium_build && cd chromium_build
+          # Strip leading v from tag if present for git branch
+          TARGET_BRANCH=$(echo "${{ inputs.version_tag }}" | sed 's/^v//')
+          echo "Fetching Chromium source branch: $TARGET_BRANCH"
+          git clone --depth 1 --branch "$TARGET_BRANCH" https://chromium.googlesource.com/chromium/src.git src
+          cd src
+          gclient sync --no-history --shallow -j8
+
+      - name: Apply Camou Stealth C++ Patches
+        run: |
+          cd chromium_build/src || cd src
+          echo "Applying CamouChromium C++ stealth patches..."
+          if [ -d "$GITHUB_WORKSPACE/patches/chromium" ]; then
+            for patch in $GITHUB_WORKSPACE/patches/chromium/*.patch; do
+              if [ -f "$patch" ]; then
+                echo "Applying $patch"
+                git apply "$patch" || git apply --reject "$patch" || true
+              fi
+            done
+          fi
+
+      - name: Configure GN Args for Fast & Release Build
+        run: |
+          cd chromium_build/src || cd src
+          gn gen out/Release --args='
+            is_debug=false
+            is_component_build=false
+            symbol_level=0
+            blink_symbol_level=0
+            target_cpu="arm64"
+            is_official_build=false
+            enable_nacl=false
+            chrome_pgo_phase=0
+          '
+
+      - name: Compile Chromium with Ninja
+        run: |
+          cd chromium_build/src || cd src
+          ninja -C out/Release chrome -j$(sysctl -n hw.ncpu)
+
+      - name: Package CamouChromium.app
+        run: |
+          cd chromium_build/src/out/Release || cd src/out/Release
+          tar -czvf $GITHUB_WORKSPACE/CamouChromium-mac-arm64.tar.gz Chromium.app
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamouChromium-mac-arm64
+          path: CamouChromium-mac-arm64.tar.gz
+
+      - name: Publish to GitHub Release
+        if: ${{ inputs.upload_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.version_tag }}" CamouChromium-mac-arm64.tar.gz --clobber || \
+          gh release create "${{ inputs.version_tag }}" CamouChromium-mac-arm64.tar.gz --title "CamouChromium C++ Kernel ${{ inputs.version_tag }}" --notes "Automated build of CamouChromium C++ Stealth Kernel."

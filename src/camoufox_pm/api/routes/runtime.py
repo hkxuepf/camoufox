@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from camoufox_pm.api.models.system import ApiResponse
 from camoufox_pm.core.browser_install import BrowserStatus, browser_installer
+from camoufox_pm.core.chromium_install import ChromiumStatus, chromium_installer
 from camoufox_pm.core.updates import UpdateStatus, check_update
 
 router = APIRouter()
@@ -20,9 +21,20 @@ async def install_browser():
     return ApiResponse(data=browser_installer.start())
 
 
+@router.get("/system/chromium", response_model=ApiResponse[ChromiumStatus])
+async def chromium_status():
+    return ApiResponse(data=chromium_installer.status())
+
+
+@router.post("/system/chromium/install", response_model=ApiResponse[ChromiumStatus])
+async def install_chromium():
+    return ApiResponse(data=chromium_installer.start())
+
+
 @router.get("/system/updates", response_model=ApiResponse[UpdateStatus])
 async def updates():
     return ApiResponse(data=await check_update())
+
 
 
 class UpdatePreparation(BaseModel):

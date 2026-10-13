@@ -86,3 +86,20 @@ async def validate_session(storage, token: str) -> str | None:
         await storage.delete_session(session["token_hash"])
         return None
     return session["username"]
+
+
+def extract_session_token(request) -> str | None:
+    """Extract session token from cookie, X-Session-Token header, or Authorization header."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        return token
+    header_token = request.headers.get("X-Session-Token")
+    if header_token:
+        return header_token.strip()
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        if token:
+            return token
+    return None
+

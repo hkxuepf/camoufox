@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     db_path: str = "data/profiles.db"
     secret_key: str | None = None
     webui_dir: str | None = None
+    cloud_server: str = "https://camoufox.usrde.com"
     # Lifetime of a login session. Sessions are stored server-side, so shortening
     # this takes effect for existing sessions on their next request.
     session_ttl_hours: int = 168
@@ -92,6 +93,8 @@ def bootstrap_desktop() -> None:
     configured = Settings()
     if "db_path" not in configured.model_fields_set:
         os.environ["CPM_DB_PATH"] = str(desktop_data_dir() / "profiles.db")
+    if "cloud_server" not in configured.model_fields_set and not os.environ.get("CPM_CLOUD_SERVER"):
+        os.environ["CPM_CLOUD_SERVER"] = "https://camoufox.usrde.com"
     get_settings.cache_clear()
     settings = get_settings()
     data_dir = Path(settings.db_path).expanduser().resolve().parent

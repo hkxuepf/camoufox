@@ -2,6 +2,7 @@
 
 import asyncio
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -59,18 +60,25 @@ class ProfileManager:
         notes: str | None = None,
         fingerprint_preset: str | None = None,
         status: ProfileStatus | str | None = None,
+        user_id: str | None = None,
+        cookies: str | None = None,
+        account: str | None = None,
+        is_favorite: bool = False,
+        tags: list[str] | None = None,
     ) -> Profile:
-        """Create a new profile.
-
-        ``fingerprint_preset`` is an id from :func:`fingerprint_store.list_presets`.
-        When given, the profile is pinned to that captured real device instead of
-        waiting for its first launch to generate a synthetic one.
-        """
+        """Create a new profile."""
         logger.info(f"Creating new profile: {name}")
 
-        # Notes belong to the user; the creation time is already in created_at,
-        # so it is not stamped into the field the user types into.
-        profile = Profile(name=name, group=group, notes=notes)
+        profile = Profile(
+            name=name,
+            group=group,
+            notes=notes,
+            user_id=user_id,
+            cookies=cookies,
+            account=account,
+            is_favorite=is_favorite or False,
+            tags=tags or [],
+        )
         if status:
             # Raises for an unknown value rather than falling back to active: a
             # bulk import is where a typo would otherwise reactivate a fleet of
@@ -101,6 +109,24 @@ class ProfileManager:
             from .models import ProxyConfig
 
             profile.proxy = ProxyConfig(**proxy_config)
+
+        # Auto-adapt timezone & languages to outbound IP if not explicitly set
+        bs = profile.browser_settings
+        needs_tz = not bool(bs.timezone)
+        needs_lang = not bool(bs.languages) or bs.languages == ["en-US", "en"]
+        if needs_tz or needs_lang:
+            try:
+                from .proxy_check import resolve_exit_ip, locate
+                from .geo_utils import get_languages_for_country
+                ip, _ = await resolve_exit_ip(getattr(profile, "proxy", None), timeout=2.0)
+                location = locate(ip)
+                if location:
+                    if needs_tz and location.timezone:
+                        profile.browser_settings.timezone = location.timezone
+                    if needs_lang and location.country:
+                        profile.browser_settings.languages = get_languages_for_country(location.country)
+            except Exception as exc:
+                logger.debug(f"IP auto-adaptation skipped during create_profile: {exc}")
 
         # Pin a real device now, if one was chosen. Otherwise the first launch
         # pins a generated fingerprint instead.
@@ -850,14 +876,30 @@ class ProfileManager:
             profile_id, self.lease_holder, get_settings().lease_ttl
         )
         if not acquired:
-            # The acquire is a conditional UPDATE, so it reports the same "no
-            # rows changed" for a profile that is leased and for one that does
-            # not exist. get_lease tells them apart: None means no such row,
-            # and that is a 404, not a conflict.
             lease = await self.storage.get_lease(profile_id)
             if lease is None or not await self.get_profile(profile_id):
                 raise ValueError(f"Profile with ID {profile_id} not found")
-            raise ProfileLocked(profile_id, lease[0])
+
+            # Auto-harvest orphan leases from dead processes on localhost
+            holder_str = lease[0] if lease else None
+            if holder_str and ":" in holder_str:
+                parts = holder_str.split(":")
+                host, pid_str = parts[0], parts[1]
+                import socket, psutil
+                if host == socket.gethostname():
+                    try:
+                        pid_val = int(pid_str)
+                        if not psutil.pid_exists(pid_val):
+                            logger.info(f"Harvesting dead lease on {profile_id} from dead process {pid_val}")
+                            await self.storage.force_release_lease(profile_id)
+                            acquired = await self.storage.acquire_lease(
+                                profile_id, self.lease_holder, get_settings().lease_ttl
+                            )
+                    except Exception:
+                        pass
+
+            if not acquired:
+                raise ProfileLocked(profile_id, lease[0])
 
         # Everything from here to a launched browser runs on that lease, and if
         # any of it raises the lease has to go back before the error escapes.
@@ -886,35 +928,50 @@ class ProfileManager:
                 }
 
             profile.storage_path = str(profile_data_path(self, profile))
-            options = profile.to_camoufox_launch_options()
-            options["headless"] = headless
-            if window_size:
-                # Camoufox expects a (width, height) tuple, not a "1280x720" string.
-                try:
-                    width, height = (int(part) for part in window_size.lower().split("x"))
-                    options["window"] = (width, height)
-                except ValueError:
-                    logger.warning(f"Ignoring invalid window_size {window_size!r} (expected WxH)")
-            options.update(kwargs)
+            engine = profile.browser_settings.browser_engine
+            if engine == "chromium":
+                options = profile.to_chromium_launch_options()
+                options["headless"] = headless
+                if window_size:
+                    try:
+                        width, height = (int(part) for part in window_size.lower().split("x"))
+                        options["window_size"] = (width, height)
+                    except ValueError:
+                        pass
+                options.update(kwargs)
+            else:
+                options = profile.to_camoufox_launch_options()
+                options["headless"] = headless
+                if window_size:
+                    # Camoufox expects a (width, height) tuple, not a "1280x720" string.
+                    try:
+                        width, height = (int(part) for part in window_size.lower().split("x"))
+                        options["window"] = (width, height)
+                    except ValueError:
+                        logger.warning(f"Ignoring invalid window_size {window_size!r} (expected WxH)")
+                options.update(kwargs)
 
-            # Pin the machine on the first launch and replay it on every one after,
-            # so the profile is the same computer each session instead of new
-            # hardware every time. The profile's own overrides still win, and geo,
-            # timezone and WebRTC stay dynamic so they follow the proxy.
-            pinned = profile.fingerprint
-            if not pinned:
-                # resolve() can do network I/O (it fetches the uBlock addon on a
-                # fresh install). It used to have to stay synchronous, because
-                # the whole Profile was written back afterwards and an await here
-                # would let a concurrent rename be reverted. The write below now
-                # names only the columns a launch owns, so there is nothing left
-                # for an await to clobber; moving this off the event loop is a
-                # separate change, and this comment is the note that it is safe.
-                pinned = fingerprint_store.resolve(options)
+                # Pin the machine on the first launch and replay it on every one after,
+                # so the profile is the same computer each session instead of new
+                # hardware every time. The profile's own overrides still win, and geo,
+                # timezone and WebRTC stay dynamic so they follow the proxy.
+                pinned = profile.fingerprint
+                if not pinned:
+                    # resolve() can do network I/O (it fetches the uBlock addon on a
+                    # fresh install).
+                    pinned = fingerprint_store.resolve(options)
+                    if pinned:
+                        profile.fingerprint = pinned
                 if pinned:
-                    profile.fingerprint = pinned
-            if pinned:
-                options["config"] = {**pinned, **options.get("config", {})}
+                    options["config"] = {**pinned, **options.get("config", {})}
+                if not profile.browser_settings.fonts and "config" in options:
+                    options["config"].pop("fonts", None)
+                if sys.platform == "darwin" and "config" in options:
+                    cfg = options["config"]
+                    if cfg.get("navigator.platform") in ("Win32", "Win64"):
+                        cfg["navigator.platform"] = "MacIntel"
+                    if "navigator:oscpu" in cfg and "Windows" in str(cfg["navigator:oscpu"]):
+                        cfg["navigator:oscpu"] = "Intel Mac OS X 10.15"
 
             # A targeted write of the two columns a launch owns, not a whole
             # Profile: writing the row back would revert anything edited while
@@ -926,17 +983,24 @@ class ProfileManager:
 
             await self.storage.log_usage(
                 UsageStats(
-                    profile_id=profile_id, action="launch_browser", details={"headless": headless}
+                    profile_id=profile_id,
+                    action="launch_browser",
+                    details={"headless": headless, "engine": engine},
                 )
             )
 
             # After the write on purpose: this only touches the launch options, so it
             # cannot clobber the row, and it is the first await that is allowed to run
             # between reading the profile and saving it.
-            await proxy_check.fill_what_geoip_would_have(profile.proxy, options)
+            if engine == "camoufox":
+                await proxy_check.fill_what_geoip_would_have(profile.proxy, options)
+            else:
+                # Chromium: dynamically auto-align timezone and language from proxy location
+                bs_settings = options.get("browser_settings", {})
+                await proxy_check.auto_align_proxy_location(profile.proxy, bs_settings)
 
             session = await self.browser_sessions.launch(
-                profile_id, options, on_exit=self._on_browser_exit
+                profile_id, options, on_exit=self._on_browser_exit, engine=engine
             )
         except (Exception, asyncio.CancelledError):
             # CancelledError is a BaseException, not an Exception: an HTTP client
@@ -955,7 +1019,8 @@ class ProfileManager:
         return {
             "status": "launched",
             "profile_id": profile_id,
-            "message": "Browser launched successfully",
+            "engine": engine,
+            "message": f"{'Chromium' if engine == 'chromium' else 'Camoufox'} browser launched successfully",
             "process_id": session.process_id,
             "camoufox_options": {"process_id": session.process_id, "options": options},
         }

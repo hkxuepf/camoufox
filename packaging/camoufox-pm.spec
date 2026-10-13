@@ -17,7 +17,7 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 datas = [(os.path.join(ROOT, "src", "camoufox_pm", "webui"), "camoufox_pm/webui")]
 datas += copy_metadata("camoufox-profile-manager")
 binaries = []
-hiddenimports = collect_submodules("uvicorn")
+hiddenimports = collect_submodules("uvicorn") + collect_submodules("camoufox_pm")
 if sys.platform.startswith("linux"):
     hiddenimports += ["webview.platforms.qt", "PyQt6.QtWebEngineWidgets", "PyQt6.QtWebEngineCore"]
 
@@ -52,6 +52,7 @@ exe = EXE(
     name="camoufox-pm",
     # Desktop entry point redirects absent streams to the writable data folder.
     console=False,
+    icon=os.path.join(SPECPATH, "CamouHub.icns"),
 )
 coll = COLLECT(
     exe,
@@ -61,10 +62,12 @@ coll = COLLECT(
 )
 app = BUNDLE(
     coll,
-    name="Camoufox Profile Manager.app",
-    bundle_identifier="com.github.polyackiy.camoufox-pm",
+    name="CamouHub.app",
+    icon=os.path.join(SPECPATH, "CamouHub.icns"),
+    bundle_identifier="com.camouhub.browser",
     info_plist={
         "NSHighResolutionCapable": True,
         "CFBundleShortVersionString": version("camoufox-profile-manager"),
     },
 )
+

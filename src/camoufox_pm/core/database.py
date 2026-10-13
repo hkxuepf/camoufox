@@ -21,6 +21,7 @@ from .models import (
     Schedule,
     ScheduleRun,
     UsageStats,
+    generate_short_id,
 )
 
 
@@ -95,16 +96,28 @@ class DatabaseManager:
             "profiles": [
                 ("fingerprint", "TEXT"),
                 ("proxy_check", "TEXT"),
-                # Lease columns (see core/leases.py). NULL means free, which is
-                # what an existing row gets when the column is added — every
-                # profile in an upgraded database starts unleased.
                 ("locked_by", "TEXT"),
                 ("lock_expires", "TIMESTAMP"),
-                # Optimistic-concurrency counter. Existing rows start at 0, so
-                # the first version-checked save of an upgraded database has a
-                # version to match against.
                 ("row_version", "BIGINT NOT NULL DEFAULT 0"),
                 ("deleted_at", "TIMESTAMP"),
+                ("user_id", "TEXT"),
+            ],
+            "profile_groups": [
+                ("user_id", "TEXT"),
+            ],
+            "schedules": [
+                ("user_id", "TEXT"),
+            ],
+            "users": [
+                ("role", "TEXT DEFAULT 'user'"),
+                ("plan_id", "TEXT DEFAULT 'free'"),
+                ("max_profiles", "INTEGER DEFAULT 10"),
+                ("max_concurrent", "INTEGER DEFAULT 2"),
+                ("expires_at", "TIMESTAMP"),
+                ("status", "TEXT DEFAULT 'active'"),
+                ("api_status", "TEXT DEFAULT 'disabled'"),
+                ("api_app_id", "TEXT"),
+                ("api_app_secret", "TEXT"),
             ],
         }
         for table, columns in added_columns.items():
@@ -115,6 +128,9 @@ class DatabaseManager:
                     continue
                 self._connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}")
                 logger.info(f"Migrated {table}: added column {name}")
+        
+        # 确保现有管理员账号获得超管权限
+        self._connection.execute("UPDATE users SET role = 'admin', max_profiles = 99999, max_concurrent = 999 WHERE username IN ('admin', 'fgwl')")
         self._connection.commit()
 
     async def _create_tables(self):
@@ -149,6 +165,18 @@ class DatabaseManager:
                 deleted_at TIMESTAMP
             )
         """)
+
+        # Dynamic migrations for commercial anti-detect features
+        for col, col_type in [
+            ("cookies", "TEXT"),
+            ("account", "TEXT"),
+            ("is_favorite", "INTEGER DEFAULT 0"),
+            ("tags", "TEXT DEFAULT '[]'"),
+        ]:
+            try:
+                self._connection.execute(f"ALTER TABLE profiles ADD COLUMN {col} {col_type};")
+            except Exception:
+                pass
 
         # Profile groups table
         self._connection.execute("""
@@ -226,6 +254,130 @@ class DatabaseManager:
             )
         """)
 
+        # Plans table for tiered subscriptions
+        self._connection.execute("""
+            CREATE TABLE IF NOT EXISTS plans (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                max_profiles INTEGER NOT NULL,
+                max_concurrent INTEGER NOT NULL,
+                duration_days INTEGER NOT NULL,
+                price_usdt REAL NOT NULL,
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Seed initial default plans
+        self._connection.execute("""
+            INSERT OR IGNORE INTO plans (id, name, max_profiles, max_concurrent, duration_days, price_usdt, description)
+            VALUES 
+                ('free', '体验版', 5, 1, 3, 0.0, '初次体验指纹浏览器功能，赠送 3 天试用'),
+                ('basic', '基础版', 20, 2, 30, 10.0, '适合个人卖家或多号轻度运营，支持 20 个独立环境'),
+                ('pro', '专业版', 60, 5, 30, 28.0, '适合电商工作室，支持 60 个环境及 5 并发多开'),
+                ('enterprise', '企业版', 200, 10, 30, 79.0, '适合规模化多账号矩阵，支持 200 个环境与 10 并发')
+        """)
+
+        # USDT Orders table
+        self._connection.execute("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id TEXT PRIMARY KEY,
+                order_no TEXT NOT NULL UNIQUE,
+                user_id TEXT NOT NULL,
+                username TEXT NOT NULL,
+                plan_id TEXT NOT NULL,
+                plan_name TEXT NOT NULL,
+                amount_usdt REAL NOT NULL,
+                status TEXT DEFAULT 'pending',
+                pay_network TEXT DEFAULT 'TRC20',
+                pay_address TEXT,
+                tx_hash TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                paid_at TIMESTAMP
+            )
+        """)
+
+        # Admin / Payment settings
+        self._connection.execute("""
+            CREATE TABLE IF NOT EXISTS admin_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
+        # Proxies table for proxy pool management
+        self._connection.execute("""
+            CREATE TABLE IF NOT EXISTS proxies (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                type TEXT NOT NULL DEFAULT 'http',
+                server TEXT NOT NULL,
+                port INTEGER,
+                username TEXT,
+                password TEXT,
+                status TEXT DEFAULT 'uncheck',
+                latency_ms INTEGER,
+                country TEXT,
+                city TEXT,
+                ip TEXT,
+                user_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_checked_at TIMESTAMP
+            )
+        """)
+
+        # Extensions table for plugin management
+        self._connection.execute("""
+            CREATE TABLE IF NOT EXISTS extensions (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                version TEXT,
+                icon_url TEXT,
+                description TEXT,
+                category TEXT DEFAULT 'general',
+                crx_id TEXT,
+                download_url TEXT,
+                local_path TEXT,
+                is_preset BOOLEAN DEFAULT 0,
+                enabled BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Seed and update preset extensions with embedded vector icons
+        from camoufox_pm.core.preset_icons import PRESET_CATALOG
+        for item in PRESET_CATALOG:
+            self._connection.execute("""
+                INSERT INTO extensions (id, name, version, icon_url, description, category, crx_id, is_preset, enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    icon_url = excluded.icon_url,
+                    description = excluded.description,
+                    category = excluded.category,
+                    crx_id = excluded.crx_id,
+                    version = excluded.version
+                WHERE is_preset = 1
+            """, (
+                item["id"],
+                item["name"],
+                item["version"],
+                item["icon_url"],
+                item["description"],
+                item["category"],
+                item["crx_id"],
+            ))
+
+        # Default payment gateway settings
+        self._connection.execute("""
+            INSERT OR IGNORE INTO admin_settings (key, value)
+            VALUES 
+                ('usdt_wallet_address', 'TYDnyQfxxxxxxxSAMPLEWALLETaddress'),
+                ('usdt_network', 'TRC20'),
+                ('payment_gateway_url', ''),
+                ('payment_gateway_secret', '')
+        """)
+
         self._connection.commit()
 
     async def _create_indexes(self):
@@ -269,24 +421,22 @@ class DatabaseManager:
             profile.last_used.isoformat() if profile.last_used else None,
             json.dumps(profile.fingerprint) if profile.fingerprint else None,
             profile.proxy_check.model_dump_json() if profile.proxy_check else None,
+            profile.user_id,
+            profile.cookies,
+            profile.account,
+            1 if profile.is_favorite else 0,
+            json.dumps(profile.tags or []),
         )
 
     def _upsert_profile(self, profile: Profile) -> None:
-        """Insert the row, or overwrite the columns a save owns.
-
-        An upsert rather than ``INSERT OR REPLACE``, which deletes the row and
-        writes a new one: that would drop the lease and version columns, so
-        renaming a profile would quietly unlock a browser another instance is
-        running. ``DO UPDATE`` names only the columns a save owns, and the ones
-        it does not name keep their values.
-        """
+        """Insert the row, or overwrite the columns a save owns."""
         self._connection.execute(
             """
             INSERT INTO profiles (
                 id, name, group_id, status, browser_settings, proxy_config,
                 extensions, storage_path, notes, created_at, updated_at, last_used,
-                fingerprint, proxy_check
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                fingerprint, proxy_check, user_id, cookies, account, is_favorite, tags
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 group_id = excluded.group_id,
@@ -300,23 +450,18 @@ class DatabaseManager:
                 updated_at = excluded.updated_at,
                 last_used = excluded.last_used,
                 fingerprint = excluded.fingerprint,
-                proxy_check = excluded.proxy_check
+                proxy_check = excluded.proxy_check,
+                user_id = COALESCE(excluded.user_id, profiles.user_id),
+                cookies = excluded.cookies,
+                account = excluded.account,
+                is_favorite = excluded.is_favorite,
+                tags = excluded.tags
         """,
             self._profile_columns(profile),
         )
 
     async def save_profile(self, profile: Profile, expected_row_version: int | None = None):
-        """Save a profile.
-
-        With ``expected_row_version`` the write lands only while the stored
-        ``row_version`` still matches what the caller read, and bumps it;
-        matching no rows raises ``StaleWriteError`` rather than overwriting
-        whoever got there first. That is what makes editing one profile from
-        two places safe. Without a version the row is written as before.
-
-        Either way the lease columns survive untouched: a save must never break
-        or take another instance's lease.
-        """
+        """Save a profile."""
         profile.updated_at = datetime.now()
         if expected_row_version is None:
             self._upsert_profile(profile)
@@ -326,19 +471,16 @@ class DatabaseManager:
         logger.debug(f"Profile {profile.name} saved")
 
     def _save_profile_if_unchanged(self, profile: Profile, expected_row_version: int) -> None:
-        """One guarded statement: update only while the version still matches.
-
-        Never creates a row. There is nothing to guard on a row that does not
-        exist yet, and silently inserting one would turn "somebody deleted this
-        profile while you were editing it" into a resurrection.
-        """
+        """One guarded statement: update only while the version still matches."""
         cursor = self._connection.execute(
             """
             UPDATE profiles SET
                 name = ?, group_id = ?, status = ?, browser_settings = ?,
                 proxy_config = ?, extensions = ?, storage_path = ?, notes = ?,
                 created_at = ?, updated_at = ?, last_used = ?, fingerprint = ?,
-                proxy_check = ?, row_version = row_version + 1
+                proxy_check = ?, user_id = COALESCE(?, user_id),
+                cookies = ?, account = ?, is_favorite = ?, tags = ?,
+                row_version = row_version + 1
             WHERE id = ? AND row_version = ? AND deleted_at IS NULL
             """,
             (*self._profile_columns(profile)[1:], profile.id, expected_row_version),
@@ -451,6 +593,9 @@ class DatabaseManager:
         params = []
 
         if filters:
+            if "user_id" in filters and filters["user_id"]:
+                query += " AND user_id = ?"
+                params.append(filters["user_id"])
             if "group" in filters:
                 query += " AND group_id = ?"
                 params.append(filters["group"])
@@ -483,6 +628,9 @@ class DatabaseManager:
         params = []
 
         if filters:
+            if "user_id" in filters and filters["user_id"]:
+                query += " AND user_id = ?"
+                params.append(filters["user_id"])
             if "group" in filters:
                 query += " AND group_id = ?"
                 params.append(filters["group"])
@@ -603,29 +751,120 @@ class DatabaseManager:
 
     # --- Users and sessions ---
 
-    async def create_user(self, user_id: str, username: str, password_hash: str) -> None:
+    async def create_user(
+        self,
+        user_id: str,
+        username: str,
+        password_hash: str,
+        role: str = "user",
+        plan_id: str = "free",
+        max_profiles: int = 10,
+        max_concurrent: int = 2,
+        expires_at: str | None = None,
+    ) -> None:
         """Create a user; raises ``ValueError`` when the username is taken."""
         try:
             self._connection.execute(
-                "INSERT INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, username, password_hash, datetime.now().isoformat()),
+                """
+                INSERT INTO users (id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    username,
+                    password_hash,
+                    role,
+                    plan_id,
+                    max_profiles,
+                    max_concurrent,
+                    expires_at,
+                    datetime.now().isoformat(),
+                ),
             )
         except sqlite3.IntegrityError as exc:
             raise ValueError(f"User {username!r} already exists") from exc
         self._connection.commit()
         # Deliberately logs the name only, never the hash.
-        logger.info(f"User {username} created")
+        logger.info(f"User {username} created with role={role}")
 
     async def get_user_by_username(self, username: str) -> dict | None:
         cursor = self._connection.execute(
-            "SELECT id, username, password_hash FROM users WHERE username = ?", (username,)
+            """
+            SELECT id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at, status, created_at,
+                   api_status, api_app_id, api_app_secret
+            FROM users WHERE username = ?
+            """,
+            (username,),
         )
         row = cursor.fetchone()
         return dict(row) if row else None
 
+    async def get_user_by_id(self, user_id: str) -> dict | None:
+        cursor = self._connection.execute(
+            """
+            SELECT id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at, status, created_at,
+                   api_status, api_app_id, api_app_secret
+            FROM users WHERE id = ?
+            """,
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def update_user_api_credentials(
+        self, username: str, api_status: str, app_id: str, app_secret: str
+    ) -> bool:
+        cursor = self._connection.execute(
+            "UPDATE users SET api_status = ?, api_app_id = ?, api_app_secret = ? WHERE username = ?",
+            (api_status, app_id, app_secret, username),
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
+
     async def update_user_password(self, username: str, password_hash: str) -> bool:
         cursor = self._connection.execute(
             "UPDATE users SET password_hash = ? WHERE username = ?", (password_hash, username)
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    async def update_user_admin(
+        self,
+        username: str,
+        role: str | None = None,
+        plan_id: str | None = None,
+        max_profiles: int | None = None,
+        max_concurrent: int | None = None,
+        expires_at: str | None = None,
+        status: str | None = None,
+    ) -> bool:
+        updates = []
+        params = []
+        if role is not None:
+            updates.append("role = ?")
+            params.append(role)
+        if plan_id is not None:
+            updates.append("plan_id = ?")
+            params.append(plan_id)
+        if max_profiles is not None:
+            updates.append("max_profiles = ?")
+            params.append(max_profiles)
+        if max_concurrent is not None:
+            updates.append("max_concurrent = ?")
+            params.append(max_concurrent)
+        if expires_at is not None:
+            updates.append("expires_at = ?")
+            params.append(expires_at)
+        if status is not None:
+            updates.append("status = ?")
+            params.append(status)
+
+        if not updates:
+            return False
+
+        params.append(username)
+        cursor = self._connection.execute(
+            f"UPDATE users SET {', '.join(updates)} WHERE username = ?", params
         )
         self._connection.commit()
         return cursor.rowcount > 0
@@ -641,9 +880,11 @@ class DatabaseManager:
         return cursor.fetchone()[0]
 
     async def list_users(self) -> list[dict]:
-        """Usernames and creation times only — hashes stay in the table."""
         cursor = self._connection.execute(
-            "SELECT username, created_at FROM users ORDER BY created_at"
+            """
+            SELECT id, username, role, plan_id, max_profiles, max_concurrent, expires_at, status, created_at
+            FROM users ORDER BY created_at DESC
+            """
         )
         return [dict(row) for row in cursor.fetchall()]
 
@@ -679,6 +920,135 @@ class DatabaseManager:
         )
         self._connection.commit()
         return cursor.rowcount
+
+    # --- Plans ---
+    async def list_plans(self) -> list[dict]:
+        cursor = self._connection.execute("SELECT * FROM plans ORDER BY price_usdt ASC")
+        return [dict(row) for row in cursor.fetchall()]
+
+    async def get_plan(self, plan_id: str) -> dict | None:
+        cursor = self._connection.execute("SELECT * FROM plans WHERE id = ?", (plan_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def save_plan(self, plan: dict) -> None:
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO plans (id, name, max_profiles, max_concurrent, duration_days, price_usdt, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                plan["id"],
+                plan["name"],
+                plan["max_profiles"],
+                plan["max_concurrent"],
+                plan["duration_days"],
+                plan["price_usdt"],
+                plan.get("description", ""),
+            ),
+        )
+        self._connection.commit()
+
+    async def delete_plan(self, plan_id: str) -> bool:
+        cursor = self._connection.execute("DELETE FROM plans WHERE id = ?", (plan_id,))
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    # --- Orders ---
+    async def create_order(self, order: dict) -> dict:
+        self._connection.execute(
+            """
+            INSERT INTO orders (id, order_no, user_id, username, plan_id, plan_name, amount_usdt, status, pay_network, pay_address, tx_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order["id"],
+                order["order_no"],
+                order["user_id"],
+                order["username"],
+                order["plan_id"],
+                order["plan_name"],
+                order["amount_usdt"],
+                order.get("status", "pending"),
+                order.get("pay_network", "TRC20"),
+                order.get("pay_address", ""),
+                order.get("tx_hash", None),
+                order.get("created_at", datetime.now().isoformat()),
+            ),
+        )
+        self._connection.commit()
+        return order
+
+    async def get_order(self, order_no: str) -> dict | None:
+        cursor = self._connection.execute("SELECT * FROM orders WHERE order_no = ?", (order_no,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def list_orders(self, user_id: str | None = None, limit: int = 100) -> list[dict]:
+        if user_id:
+            cursor = self._connection.execute(
+                "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+                (user_id, limit),
+            )
+        else:
+            cursor = self._connection.execute(
+                "SELECT * FROM orders ORDER BY created_at DESC LIMIT ?", (limit,)
+            )
+        return [dict(row) for row in cursor.fetchall()]
+
+    async def update_order_status(
+        self, order_no: str, status: str, tx_hash: str | None = None
+    ) -> bool:
+        updates = ["status = ?"]
+        params = [status]
+        if status == "paid":
+            updates.append("paid_at = ?")
+            params.append(datetime.now().isoformat())
+        if tx_hash:
+            updates.append("tx_hash = ?")
+            params.append(tx_hash)
+        params.append(order_no)
+
+        cursor = self._connection.execute(
+            f"UPDATE orders SET {', '.join(updates)} WHERE order_no = ?", params
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    # --- Admin Settings & Stats ---
+    async def get_admin_settings(self) -> dict[str, str]:
+        cursor = self._connection.execute("SELECT key, value FROM admin_settings")
+        return {row["key"]: row["value"] or "" for row in cursor.fetchall()}
+
+    async def update_admin_setting(self, key: str, value: str) -> None:
+        self._connection.execute(
+            "INSERT OR REPLACE INTO admin_settings (key, value) VALUES (?, ?)", (key, value)
+        )
+        self._connection.commit()
+
+    async def get_admin_dashboard_stats(self) -> dict:
+        user_count = self._connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        profile_count = self._connection.execute(
+            "SELECT COUNT(*) FROM profiles WHERE deleted_at IS NULL"
+        ).fetchone()[0]
+        active_running = self._connection.execute(
+            "SELECT COUNT(*) FROM profiles WHERE locked_by IS NOT NULL AND julianday(lock_expires) > julianday('now')"
+        ).fetchone()[0]
+        total_orders = self._connection.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        paid_orders = self._connection.execute(
+            "SELECT COUNT(*) FROM orders WHERE status = 'paid'"
+        ).fetchone()[0]
+        total_revenue = self._connection.execute(
+            "SELECT COALESCE(SUM(amount_usdt), 0) FROM orders WHERE status = 'paid'"
+        ).fetchone()[0]
+        return {
+            "user_count": user_count,
+            "profile_count": profile_count,
+            "active_running": active_running,
+            "total_orders": total_orders,
+            "paid_orders": paid_orders,
+            "total_revenue_usdt": round(float(total_revenue), 2),
+        }
 
     # --- Schedules ---
 
@@ -935,6 +1305,186 @@ class DatabaseManager:
         )
         self._connection.commit()
 
+    # --- Proxies ---
+
+    async def create_proxy(self, data: dict) -> dict:
+        proxy_id = data.get("id") or generate_short_id(8)
+        password = encrypt(data["password"]) if data.get("password") else None
+        self._connection.execute(
+            """
+            INSERT INTO proxies (id, name, type, server, port, username, password, status, latency_ms, country, city, ip, user_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                proxy_id,
+                data.get("name") or f"{data.get('type', 'http').upper()}-{data.get('server')}:{data.get('port', 80)}",
+                data.get("type", "http").lower(),
+                data.get("server"),
+                data.get("port"),
+                data.get("username"),
+                password,
+                data.get("status", "uncheck"),
+                data.get("latency_ms"),
+                data.get("country"),
+                data.get("city"),
+                data.get("ip"),
+                data.get("user_id"),
+            ),
+        )
+        self._connection.commit()
+        return await self.get_proxy(proxy_id)
+
+    async def batch_create_proxies(self, proxies_list: list[dict], user_id: str | None = None) -> int:
+        count = 0
+        for data in proxies_list:
+            proxy_id = data.get("id") or generate_short_id(8)
+            password = encrypt(data["password"]) if data.get("password") else None
+            self._connection.execute(
+                """
+                INSERT INTO proxies (id, name, type, server, port, username, password, status, latency_ms, country, city, ip, user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    proxy_id,
+                    data.get("name") or f"{data.get('type', 'http').upper()}-{data.get('server')}:{data.get('port', 80)}",
+                    data.get("type", "http").lower(),
+                    data.get("server"),
+                    data.get("port"),
+                    data.get("username"),
+                    password,
+                    data.get("status", "uncheck"),
+                    data.get("latency_ms"),
+                    data.get("country"),
+                    data.get("city"),
+                    data.get("ip"),
+                    user_id or data.get("user_id"),
+                ),
+            )
+            count += 1
+        self._connection.commit()
+        return count
+
+    async def get_proxy(self, proxy_id: str) -> dict | None:
+        cursor = self._connection.execute("SELECT * FROM proxies WHERE id = ?", (proxy_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return self._row_to_proxy(row)
+
+    async def list_proxies(self, user_id: str | None = None) -> list[dict]:
+        if user_id:
+            cursor = self._connection.execute(
+                "SELECT * FROM proxies WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC",
+                (user_id,),
+            )
+        else:
+            cursor = self._connection.execute("SELECT * FROM proxies ORDER BY created_at DESC")
+        return [self._row_to_proxy(r) for r in cursor.fetchall()]
+
+    async def update_proxy(self, proxy_id: str, updates: dict) -> bool:
+        fields = []
+        params = []
+        for k, v in updates.items():
+            if k == "password" and v is not None:
+                v = encrypt(v)
+            fields.append(f"{k} = ?")
+            params.append(v)
+        if not fields:
+            return False
+        params.append(proxy_id)
+        sql = f"UPDATE proxies SET {', '.join(fields)} WHERE id = ?"
+        cursor = self._connection.execute(sql, params)
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    async def delete_proxy(self, proxy_id: str) -> bool:
+        cursor = self._connection.execute("DELETE FROM proxies WHERE id = ?", (proxy_id,))
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    async def delete_proxies_batch(self, proxy_ids: list[str]) -> int:
+        if not proxy_ids:
+            return 0
+        placeholders = ",".join("?" for _ in proxy_ids)
+        cursor = self._connection.execute(f"DELETE FROM proxies WHERE id IN ({placeholders})", proxy_ids)
+        self._connection.commit()
+        return cursor.rowcount
+
+    def _row_to_proxy(self, row) -> dict:
+        keys = row.keys()
+        pwd = None
+        if "password" in keys and row["password"]:
+            try:
+                pwd = decrypt(row["password"])
+            except Exception:
+                pwd = row["password"]
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "type": row["type"],
+            "server": row["server"],
+            "port": row["port"],
+            "username": row["username"],
+            "password": pwd,
+            "status": row["status"],
+            "latency_ms": row["latency_ms"],
+            "country": row["country"],
+            "city": row["city"],
+            "ip": row["ip"],
+            "user_id": row["user_id"] if "user_id" in keys else None,
+            "created_at": row["created_at"],
+            "last_checked_at": row["last_checked_at"] if "last_checked_at" in keys else None,
+        }
+
+    # --- Extensions ---
+
+    async def list_extensions(self) -> list[dict]:
+        cursor = self._connection.execute("SELECT * FROM extensions ORDER BY is_preset DESC, created_at DESC")
+        return [dict(r) for r in cursor.fetchall()]
+
+    async def get_extension(self, ext_id: str) -> dict | None:
+        cursor = self._connection.execute("SELECT * FROM extensions WHERE id = ?", (ext_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def create_extension(self, data: dict) -> dict:
+        ext_id = data.get("id") or generate_short_id(8)
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO extensions (id, name, version, icon_url, description, category, crx_id, download_url, local_path, is_preset, enabled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                ext_id,
+                data["name"],
+                data.get("version", "1.0.0"),
+                data.get("icon_url"),
+                data.get("description"),
+                data.get("category", "general"),
+                data.get("crx_id"),
+                data.get("download_url"),
+                data.get("local_path"),
+                data.get("is_preset", 0),
+                data.get("enabled", 1),
+            ),
+        )
+        self._connection.commit()
+        return await self.get_extension(ext_id)
+
+    async def update_extension(self, ext_id: str, updates: dict) -> bool:
+        fields = [f"{k} = ?" for k in updates.keys()]
+        if not fields:
+            return False
+        params = list(updates.values()) + [ext_id]
+        cursor = self._connection.execute(f"UPDATE extensions SET {', '.join(fields)} WHERE id = ?", params)
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    async def delete_extension(self, ext_id: str) -> bool:
+        cursor = self._connection.execute("DELETE FROM extensions WHERE id = ? AND is_preset = 0", (ext_id,))
+        self._connection.commit()
+        return cursor.rowcount > 0
+
     # --- Utilities ---
 
     def _row_to_schedule(self, row) -> Schedule:
@@ -988,9 +1538,12 @@ class DatabaseManager:
                 # one unreadable value. Losing the dot is the right cost.
                 logger.warning(f"Profile {row['id']}: unreadable proxy check, ignoring ({error})")
 
+        user_id = row["user_id"] if "user_id" in keys else None
+
         return Profile(
             id=row["id"],
             name=row["name"],
+            user_id=user_id,
             group=row["group_id"],
             status=ProfileStatus(row["status"]),
             browser_settings=browser_settings,
@@ -1005,6 +1558,10 @@ class DatabaseManager:
             proxy_check=stored_check,
             row_version=row["row_version"],
             deleted_at=datetime.fromisoformat(row["deleted_at"]) if row["deleted_at"] else None,
+            cookies=row["cookies"] if "cookies" in keys else None,
+            account=row["account"] if "account" in keys else None,
+            is_favorite=bool(row["is_favorite"]) if "is_favorite" in keys and row["is_favorite"] else False,
+            tags=json.loads(row["tags"]) if "tags" in keys and row["tags"] else [],
         )
 
     async def close(self):
@@ -1076,14 +1633,48 @@ class StorageManager:
         return await self.db.delete_profile_group(group_id)
 
     # User and session methods
-    async def create_user(self, user_id: str, username: str, password_hash: str) -> None:
-        await self.db.create_user(user_id, username, password_hash)
+    async def create_user(
+        self,
+        user_id: str,
+        username: str,
+        password_hash: str,
+        role: str = "user",
+        plan_id: str = "free",
+        max_profiles: int = 10,
+        max_concurrent: int = 2,
+        expires_at: str | None = None,
+    ) -> None:
+        await self.db.create_user(
+            user_id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at
+        )
 
     async def get_user_by_username(self, username: str) -> dict | None:
         return await self.db.get_user_by_username(username)
 
+    async def get_user_by_id(self, user_id: str) -> dict | None:
+        return await self.db.get_user_by_id(user_id)
+
     async def update_user_password(self, username: str, password_hash: str) -> bool:
         return await self.db.update_user_password(username, password_hash)
+
+    async def update_user_api_credentials(
+        self, username: str, api_status: str, app_id: str, app_secret: str
+    ) -> bool:
+        return await self.db.update_user_api_credentials(username, api_status, app_id, app_secret)
+
+    async def update_user_admin(
+        self,
+        username: str,
+        role: str | None = None,
+        plan_id: str | None = None,
+        max_profiles: int | None = None,
+        max_concurrent: int | None = None,
+        expires_at: str | None = None,
+        status: str | None = None,
+    ) -> bool:
+        return await self.db.update_user_admin(
+            username, role, plan_id, max_profiles, max_concurrent, expires_at, status
+        )
 
     async def delete_user(self, username: str) -> bool:
         return await self.db.delete_user(username)
@@ -1105,6 +1696,44 @@ class StorageManager:
 
     async def delete_expired_sessions(self) -> int:
         return await self.db.delete_expired_sessions()
+
+    # Plan methods
+    async def list_plans(self) -> list[dict]:
+        return await self.db.list_plans()
+
+    async def get_plan(self, plan_id: str) -> dict | None:
+        return await self.db.get_plan(plan_id)
+
+    async def save_plan(self, plan: dict) -> None:
+        await self.db.save_plan(plan)
+
+    async def delete_plan(self, plan_id: str) -> bool:
+        return await self.db.delete_plan(plan_id)
+
+    # Order methods
+    async def create_order(self, order: dict) -> dict:
+        return await self.db.create_order(order)
+
+    async def get_order(self, order_no: str) -> dict | None:
+        return await self.db.get_order(order_no)
+
+    async def list_orders(self, user_id: str | None = None, limit: int = 100) -> list[dict]:
+        return await self.db.list_orders(user_id, limit)
+
+    async def update_order_status(
+        self, order_no: str, status: str, tx_hash: str | None = None
+    ) -> bool:
+        return await self.db.update_order_status(order_no, status, tx_hash)
+
+    # Admin Settings & Dashboard
+    async def get_admin_settings(self) -> dict[str, str]:
+        return await self.db.get_admin_settings()
+
+    async def update_admin_setting(self, key: str, value: str) -> None:
+        await self.db.update_admin_setting(key, value)
+
+    async def get_admin_dashboard_stats(self) -> dict:
+        return await self.db.get_admin_dashboard_stats()
 
     # Schedule methods
     async def save_schedule(self, schedule: Schedule):
@@ -1152,6 +1781,45 @@ class StorageManager:
     async def release_recovery_lock(self, holder: str) -> None:
         await self.db.release_recovery_lock(holder)
 
+    # Proxy pool methods
+    async def create_proxy(self, data: dict) -> dict:
+        return await self.db.create_proxy(data)
+
+    async def batch_create_proxies(self, proxies_list: list[dict], user_id: str | None = None) -> int:
+        return await self.db.batch_create_proxies(proxies_list, user_id)
+
+    async def get_proxy(self, proxy_id: str) -> dict | None:
+        return await self.db.get_proxy(proxy_id)
+
+    async def list_proxies(self, user_id: str | None = None) -> list[dict]:
+        return await self.db.list_proxies(user_id)
+
+    async def update_proxy(self, proxy_id: str, updates: dict) -> bool:
+        return await self.db.update_proxy(proxy_id, updates)
+
+    async def delete_proxy(self, proxy_id: str) -> bool:
+        return await self.db.delete_proxy(proxy_id)
+
+    async def delete_proxies_batch(self, proxy_ids: list[str]) -> int:
+        return await self.db.delete_proxies_batch(proxy_ids)
+
+    # Extension methods
+    async def list_extensions(self) -> list[dict]:
+        return await self.db.list_extensions()
+
+    async def get_extension(self, ext_id: str) -> dict | None:
+        return await self.db.get_extension(ext_id)
+
+    async def create_extension(self, data: dict) -> dict:
+        return await self.db.create_extension(data)
+
+    async def update_extension(self, ext_id: str, updates: dict) -> bool:
+        return await self.db.update_extension(ext_id, updates)
+
+    async def delete_extension(self, ext_id: str) -> bool:
+        return await self.db.delete_extension(ext_id)
+
     async def close(self):
         """Close the database."""
         await self.db.close()
+

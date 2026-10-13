@@ -11,6 +11,7 @@ const API_PREFIX = '/api/v1'
 
 export interface BrowserSettings {
   browser_ui?: 'desktop' | 'camoufox'
+  browser_engine?: 'chromium' | 'camoufox'
   os: string
   screen: string
   user_agent?: string | null
@@ -35,6 +36,16 @@ export interface BrowserSettings {
   canvas_noise?: boolean
   webgl_noise?: boolean
   audio_noise?: boolean
+  client_rects_noise?: boolean
+  device_pixel_ratio?: number
+  battery_spoofing?: boolean
+  do_not_track?: boolean
+  doh_provider?: string | null
+  search_engine?: string | null
+  webgl_vendor?: string | null
+  webgl_renderer?: string | null
+  remote_debugging_port?: number | null
+  custom_args?: string[]
 }
 
 export interface ProxyConfig {
@@ -77,6 +88,10 @@ export interface Profile {
   proxy_config?: ProxyConfig | null
   storage_path?: string | null
   notes?: string | null
+  cookies?: string | null
+  account?: string | null
+  is_favorite?: boolean
+  tags?: string[]
   created_at: string
   updated_at?: string
   last_used?: string | null
@@ -142,6 +157,7 @@ export function isStaleWrite(error: unknown): boolean {
 }
 
 const API_KEY_STORAGE = 'camoufox-pm.api-key'
+const SESSION_TOKEN_STORAGE = 'camouhub.session_token'
 
 /** The key CPM_API_KEY expects, if the user has stored one. */
 export function getApiKey(): string {
@@ -155,15 +171,40 @@ export function setApiKey(key: string): void {
   else window.localStorage.removeItem(API_KEY_STORAGE)
 }
 
+export function getSessionToken(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    return window.localStorage.getItem(SESSION_TOKEN_STORAGE) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function setSessionToken(token?: string | null): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (token) window.localStorage.setItem(SESSION_TOKEN_STORAGE, token)
+    else window.localStorage.removeItem(SESSION_TOKEN_STORAGE)
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
   const key = getApiKey()
-  return key ? { 'X-API-Key': key } : {}
+  if (key) headers['X-API-Key'] = key
+  const token = getSessionToken()
+  if (token) {
+    headers['X-Session-Token'] = token
+    headers['Authorization'] = `Bearer ${token}`
+  }
+  return headers
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    // Spread options first: putting it last let a caller's `headers` replace the
-    // merged object, silently dropping Content-Type and the API key.
+    credentials: 'include',
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -201,9 +242,12 @@ function toQuery(params: Record<string, unknown>): string {
 export interface ProxyLocation {
   ip: string
   country: string | null
+  region?: string | null
+  city?: string | null
   timezone: string | null
   latitude: number | null
   longitude: number | null
+  languages?: string[] | null
 }
 
 export interface ProxyFinding {
@@ -300,6 +344,61 @@ export const profilesAPI = {
 
   checkProxy(id: string): Promise<ProxyCheck> {
     return request<ProxyCheck>(`${API_PREFIX}/profiles/${id}/check-proxy`, { method: 'POST' })
+  },
+
+  getCookies(id: string): Promise<{ cookies: string }> {
+    return request<{ cookies: string }>(`${API_PREFIX}/profiles/${id}/cookies`)
+  },
+
+  updateCookies(id: string, cookies: string): Promise<{ status: string }> {
+    return request<{ status: string }>(`${API_PREFIX}/profiles/${id}/cookies`, {
+      method: 'POST',
+      body: JSON.stringify({ cookies }),
+    })
+  },
+
+  clearCookies(id: string): Promise<{ status: string }> {
+    return request<{ status: string }>(`${API_PREFIX}/profiles/${id}/cookies`, {
+      method: 'DELETE',
+    })
+  },
+
+  clearCache(id: string, options: { clear_cache?: boolean; clear_cookies?: boolean } = {}): Promise<{ status: string; cleared_items: string[] }> {
+    return request<{ status: string; cleared_items: string[] }>(`${API_PREFIX}/profiles/${id}/clear-cache`, {
+      method: 'POST',
+      body: JSON.stringify(options),
+    })
+  },
+
+  toggleFavorite(id: string): Promise<{ status: string; is_favorite: boolean }> {
+    return request<{ status: string; is_favorite: boolean }>(`${API_PREFIX}/profiles/${id}/toggle-favorite`, {
+      method: 'POST',
+    })
+  },
+
+  updateAccount(id: string, account: string): Promise<{ status: string; account: string }> {
+    return request<{ status: string; account: string }>(`${API_PREFIX}/profiles/${id}/account`, {
+      method: 'POST',
+      body: JSON.stringify({ account }),
+    })
+  },
+
+  mutateFingerprint(id: string): Promise<{ status: string; profile_id: string; mutated_diff: Record<string, string>; profile: Profile }> {
+    return request(`${API_PREFIX}/profiles/${id}/mutate-fingerprint`, {
+      method: 'POST',
+    })
+  },
+
+  pushCloudSync(id: string): Promise<{ success: boolean; profile_id: string; size_kb: number; uploaded_at: string }> {
+    return request(`${API_PREFIX}/profiles/${id}/cloud-sync/push`, {
+      method: 'POST',
+    })
+  },
+
+  pullCloudSync(id: string): Promise<{ success: boolean; profile_id: string; size_kb: number; meta?: any }> {
+    return request(`${API_PREFIX}/profiles/${id}/cloud-sync/pull`, {
+      method: 'POST',
+    })
   },
 
   // The same check for a profile that is still being filled in, so the form can
@@ -570,25 +669,218 @@ export const presetsAPI = {
 export interface AuthSession {
   user_auth_enabled: boolean
   authenticated: boolean
+  token?: string | null
   username: string | null
+  role?: string
+  plan_id?: string
+  max_profiles?: number
+  used_profiles?: number
+  max_concurrent?: number
+  expires_at?: string | null
+  status?: string
 }
 
-// The session lives in an HttpOnly cookie the browser sends by itself on this
-// same-origin app; nothing here stores or reads a token.
+export interface Plan {
+  id: string
+  name: string
+  max_profiles: number
+  max_concurrent: number
+  duration_days: number
+  price_usdt: number
+  description?: string
+}
+
+export interface Order {
+  id: string
+  order_no: string
+  user_id: string
+  username: string
+  plan_id: string
+  plan_name: string
+  amount_usdt: number
+  status: 'pending' | 'paid' | 'cancelled'
+  pay_network: string
+  pay_address: string
+  tx_hash?: string | null
+  created_at: string
+  paid_at?: string | null
+}
+
+export interface AdminStats {
+  user_count: number
+  profile_count: number
+  active_running: number
+  total_orders: number
+  paid_orders: number
+  total_revenue_usdt: number
+}
+
+export interface AdminUser {
+  id: string
+  username: string
+  role: string
+  plan_id: string
+  max_profiles: number
+  max_concurrent: number
+  used_profiles?: number
+  expires_at: string | null
+  status: string
+  created_at: string
+}
+
 export const authAPI = {
-  session(): Promise<AuthSession> {
-    return request<AuthSession>(`${API_PREFIX}/auth/session`)
+  async session(): Promise<AuthSession> {
+    const res = await request<AuthSession>(`${API_PREFIX}/auth/session`)
+    if (res.authenticated && res.token) {
+      setSessionToken(res.token)
+    } else if (!res.authenticated) {
+      setSessionToken(null)
+    }
+    return res
   },
 
-  login(username: string, password: string): Promise<AuthSession> {
-    return request<AuthSession>(`${API_PREFIX}/auth/login`, {
+  async login(username: string, password: string): Promise<AuthSession> {
+    const res = await request<AuthSession>(`${API_PREFIX}/auth/login`, {
       method: 'POST',
       body: JSON.stringify({ username, password }),
     })
+    if (res.authenticated && res.token) {
+      setSessionToken(res.token)
+    }
+    return res
   },
 
-  logout(): Promise<unknown> {
-    return request<unknown>(`${API_PREFIX}/auth/logout`, { method: 'POST' })
+  async register(username: string, password: string): Promise<AuthSession> {
+    const res = await request<AuthSession>(`${API_PREFIX}/auth/register`, {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    })
+    if (res.authenticated && res.token) {
+      setSessionToken(res.token)
+    }
+    return res
+  },
+
+
+  async logout(): Promise<unknown> {
+    try {
+      return await request<unknown>(`${API_PREFIX}/auth/logout`, { method: 'POST' })
+    } finally {
+      setSessionToken(null)
+    }
+  },
+}
+
+export const billingAPI = {
+  async getPlans(): Promise<Plan[]> {
+    const res = await request<{ data: Plan[] }>(`${API_PREFIX}/billing/plans`)
+    return res.data
+  },
+  async getOrders(): Promise<Order[]> {
+    const res = await request<{ data: Order[] }>(`${API_PREFIX}/billing/orders`)
+    return res.data
+  },
+  async createOrder(plan_id: string): Promise<Order> {
+    const res = await request<{ data: Order }>(`${API_PREFIX}/billing/orders`, {
+      method: 'POST',
+      body: JSON.stringify({ plan_id }),
+    })
+    return res.data
+  },
+  async getOrder(order_no: string): Promise<Order> {
+    const res = await request<{ data: Order }>(`${API_PREFIX}/billing/orders/${order_no}`)
+    return res.data
+  },
+  async submitTx(order_no: string, tx_hash: string): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/billing/orders/${order_no}/submit-tx`, {
+      method: 'POST',
+      body: JSON.stringify({ tx_hash }),
+    })
+    return res.data
+  },
+}
+
+export const adminAPI = {
+  async getDashboard(): Promise<AdminStats> {
+    const res = await request<{ data: AdminStats }>(`${API_PREFIX}/admin/dashboard`)
+    return res.data
+  },
+  async getUsers(): Promise<AdminUser[]> {
+    const res = await request<{ data: AdminUser[] }>(`${API_PREFIX}/admin/users`)
+    return res.data
+  },
+  async createUser(data: {
+    username: string
+    password: string
+    role: string
+    plan_id: string
+    max_profiles: number
+    max_concurrent: number
+    duration_days?: number
+  }): Promise<{ id: string; username: string }> {
+    const res = await request<{ data: { id: string; username: string } }>(`${API_PREFIX}/admin/users`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    return res.data
+  },
+  async updateUser(username: string, data: Partial<AdminUser>): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/users/${username}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    return res.data
+  },
+  async resetPassword(username: string, password: string): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/users/${username}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    })
+    return res.data
+  },
+  async deleteUser(username: string): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/users/${username}`, {
+      method: 'DELETE',
+    })
+    return res.data
+  },
+  async getPlans(): Promise<Plan[]> {
+    const res = await request<{ data: Plan[] }>(`${API_PREFIX}/admin/plans`)
+    return res.data
+  },
+  async savePlan(plan: Plan): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/plans`, {
+      method: 'POST',
+      body: JSON.stringify(plan),
+    })
+    return res.data
+  },
+  async deletePlan(plan_id: string): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/plans/${plan_id}`, {
+      method: 'DELETE',
+    })
+    return res.data
+  },
+  async getOrders(): Promise<Order[]> {
+    const res = await request<{ data: Order[] }>(`${API_PREFIX}/admin/orders`)
+    return res.data
+  },
+  async confirmOrder(order_no: string): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/orders/${order_no}/confirm`, {
+      method: 'POST',
+    })
+    return res.data
+  },
+  async getSettings(): Promise<Record<string, string>> {
+    const res = await request<{ data: Record<string, string> }>(`${API_PREFIX}/admin/settings`)
+    return res.data
+  },
+  async updateSettings(settings: Record<string, string>): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/settings`, {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    })
+    return res.data
   },
 }
 
@@ -599,6 +891,14 @@ export const systemAPI = {
   },
   async installBrowser(): Promise<BrowserReadiness> {
     const body = await request<{ data: BrowserReadiness }>(`${API_PREFIX}/system/browser/install`, { method: 'POST' })
+    return body.data
+  },
+  async chromium(): Promise<BrowserReadiness> {
+    const body = await request<{ data: BrowserReadiness }>(`${API_PREFIX}/system/chromium`)
+    return body.data
+  },
+  async installChromium(): Promise<BrowserReadiness> {
+    const body = await request<{ data: BrowserReadiness }>(`${API_PREFIX}/system/chromium/install`, { method: 'POST' })
     return body.data
   },
   async updates(): Promise<AppUpdate> {
@@ -687,6 +987,203 @@ export function formatLastUsed(value?: string | null): string {
 
 export const OS_LABELS: Record<string, string> = {
   windows: 'Windows',
+  android: 'Android',
+  ios: 'iOS',
   macos: 'macOS',
   linux: 'Linux',
 }
+
+export interface ProxyItem {
+  id: string
+  name: string
+  type: string
+  server: string
+  port?: number | null
+  username?: string | null
+  password?: string | null
+  status: 'active' | 'failed' | 'uncheck'
+  latency_ms?: number | null
+  country?: string | null
+  city?: string | null
+  ip?: string | null
+  user_id?: string | null
+  created_at: string
+  last_checked_at?: string | null
+}
+
+export const proxiesAPI = {
+  list: async (): Promise<{ proxies: ProxyItem[]; total: number }> => {
+    return request(`${API_PREFIX}/proxies`)
+  },
+  create: async (data: Partial<ProxyItem>): Promise<ProxyItem> => {
+    return request(`${API_PREFIX}/proxies`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  batchImport: async (params: { content?: string; default_type?: string; proxies?: any[] }): Promise<{ imported: number }> => {
+    return request(`${API_PREFIX}/proxies/batch`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    })
+  },
+  update: async (id: string, updates: Partial<ProxyItem>): Promise<{ updated: boolean }> => {
+    return request(`${API_PREFIX}/proxies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    })
+  },
+  delete: async (id: string): Promise<{ deleted: boolean }> => {
+    return request(`${API_PREFIX}/proxies/${id}`, {
+      method: 'DELETE',
+    })
+  },
+  batchDelete: async (ids: string[]): Promise<{ deleted: number }> => {
+    return request(`${API_PREFIX}/proxies/batch-delete`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+  },
+  check: async (id: string): Promise<any> => {
+    return request(`${API_PREFIX}/proxies/${id}/check`, {
+      method: 'POST',
+    })
+  },
+  batchCheck: async (ids?: string[]): Promise<{ checked: number; results: any[] }> => {
+    return request(`${API_PREFIX}/proxies/batch-check`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+  },
+}
+
+export interface ExtensionItem {
+  id: string
+  name: string
+  version?: string | null
+  icon_url?: string | null
+  description?: string | null
+  category: string
+  crx_id?: string | null
+  download_url?: string | null
+  local_path?: string | null
+  is_preset: boolean | number
+  enabled: boolean | number
+  created_at: string
+}
+
+export const extensionsAPI = {
+  list: async (): Promise<{ extensions: ExtensionItem[]; total: number }> => {
+    return request(`${API_PREFIX}/extensions`)
+  },
+  toggle: async (id: string, enabled: boolean): Promise<{ id: string; enabled: boolean }> => {
+    return request(`${API_PREFIX}/extensions/toggle/${id}`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    })
+  },
+  installPreset: async (id: string): Promise<{ id: string; installed: boolean; local_path?: string }> => {
+    return request(`${API_PREFIX}/extensions/install-preset/${id}`, {
+      method: 'POST',
+    })
+  },
+  upload: async (formData: FormData): Promise<ExtensionItem> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('cpm_session_token') : null
+    const res = await fetch(`${API_BASE_URL}${API_PREFIX}/extensions/upload`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { 'X-Session-Token': token, Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Upload failed' }))
+      throw new Error(err.detail || 'Upload failed')
+    }
+    return res.json()
+  },
+  importWebstore: async (url_or_id: string): Promise<ExtensionItem> => {
+    return request(`${API_PREFIX}/extensions/import-webstore`, {
+      method: 'POST',
+      body: JSON.stringify({ url_or_id }),
+    })
+  },
+  delete: async (id: string): Promise<{ deleted: boolean }> => {
+    return request(`${API_PREFIX}/extensions/${id}`, {
+      method: 'DELETE',
+    })
+  },
+}
+
+export const windowManagerAPI = {
+  tile: async (params?: { cols?: number; rows?: number; padding?: number }): Promise<{ success: boolean; windows_count: number; message: string }> => {
+    return request(`${API_PREFIX}/windows/tile`, {
+      method: 'POST',
+      body: JSON.stringify(params || {}),
+    })
+  },
+  active: async (): Promise<{ sessions: any[]; total: number }> => {
+    return request(`${API_PREFIX}/windows/active`)
+  },
+  broadcast: async (action: string, payload: Record<string, any> = {}, targetProfileIds?: string[]): Promise<{
+    success: boolean
+    action: string
+    total_targets: number
+    results: any[]
+  }> => {
+    return request(`${API_PREFIX}/windows/synchronizer/broadcast`, {
+      method: 'POST',
+      body: JSON.stringify({
+        action,
+        payload,
+        target_profile_ids: targetProfileIds || null,
+      }),
+    })
+  },
+}
+
+export const automationAPI = {
+  active: async (): Promise<{ active_sessions: any[]; total: number }> => {
+    return request(`${API_PREFIX}/automation/active`)
+  },
+  start: async (profileId: string, headless = false): Promise<any> => {
+    return request(`${API_PREFIX}/automation/start`, {
+      method: 'POST',
+      body: JSON.stringify({ profile_id: profileId, headless }),
+    })
+  },
+  stop: async (profileId: string): Promise<any> => {
+    return request(`${API_PREFIX}/automation/stop`, {
+      method: 'POST',
+      body: JSON.stringify({ profile_id: profileId }),
+    })
+  },
+  credentials: async (): Promise<{
+    username: string
+    is_member: boolean
+    role: string
+    plan_id: string
+    plan_name: string
+    has_applied: boolean
+    status: string
+    local_endpoint: string
+    app_id: string
+    app_secret: string
+    rate_limit: string
+    max_devices: number
+    documentation_url: string
+  }> => {
+    return request(`${API_PREFIX}/automation/credentials`)
+  },
+  apply: async (): Promise<any> => {
+    return request(`${API_PREFIX}/automation/apply`, {
+      method: 'POST',
+    })
+  },
+  resetSecret: async (): Promise<any> => {
+    return request(`${API_PREFIX}/automation/reset-secret`, {
+      method: 'POST',
+    })
+  },
+}
+

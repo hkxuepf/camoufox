@@ -126,6 +126,7 @@ interface ConfirmProps {
   title: string
   body: string
   confirmLabel?: string
+  cancelLabel?: string
   destructive?: boolean
   onConfirm: () => void
   onCancel: () => void
@@ -136,7 +137,8 @@ export function ConfirmDialog({
   open,
   title,
   body,
-  confirmLabel = 'Confirm',
+  confirmLabel,
+  cancelLabel,
   destructive = false,
   onConfirm,
   onCancel,
@@ -150,14 +152,14 @@ export function ConfirmDialog({
       footer={
         <>
           <button className="btn btn-default" onClick={onCancel}>
-            Cancel
+            {cancelLabel ?? 'Cancel'}
           </button>
           <button
             className={destructive ? 'btn btn-danger' : 'btn btn-primary'}
             onClick={onConfirm}
             autoFocus
           >
-            {confirmLabel}
+            {confirmLabel ?? 'Confirm'}
           </button>
         </>
       }

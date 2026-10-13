@@ -19,8 +19,10 @@ class FingerprintGenerator:
         # Realistic screen resolutions per operating system.
         self.os_screen_combinations = {
             "windows": ["1920x1080", "1366x768", "1536x864", "1440x900", "1600x900", "2560x1440"],
-            "macos": ["1440x900", "1680x1050", "1920x1080", "2560x1600", "2880x1800", "3840x2160"],
+            "macos": ["1512x982", "1440x900", "1680x1050", "1920x1080", "2560x1600", "2880x1800", "3840x2160"],
             "linux": ["1920x1080", "1366x768", "1280x1024", "1600x900", "1440x900", "2560x1440"],
+            "android": ["412x915", "390x844", "412x892", "360x800"],
+            "ios": ["390x844", "393x852", "428x926", "430x932"],
         }
 
         # Language sets per region.
@@ -103,13 +105,52 @@ class FingerprintGenerator:
         # every new profile a timezone and coordinates that contradicted whatever
         # proxy it was later given, and coordinates additionally turn the whole
         # IP lookup off. Geography is pinned only when a region is asked for.
+        is_mobile = os_choice in ("android", "ios")
+        if os_choice == "android":
+            cores = 8
+            memory = 8
+            touch_points = 5
+            dpr = 2.625
+            win_w, win_h = 412, 915
+            gpu_vendor = "Google Inc. (Qualcomm)"
+            gpu_renderer = "ANGLE (Qualcomm, Adreno (TM) 730, OpenGL ES 3.2)"
+        elif os_choice == "ios":
+            cores = 6
+            memory = 8
+            touch_points = 5
+            dpr = 3.0
+            win_w, win_h = 393, 852
+            gpu_vendor = "Apple Inc."
+            gpu_renderer = "Apple GPU"
+        else:
+            cores = hardware["cores"]
+            memory = hardware["memory"]
+            touch_points = 0
+            dpr = 1.0
+            win_w, win_h = 1920, 1080
+            if screen and "x" in screen:
+                try:
+                    win_w, win_h = (int(p) for p in screen.split("x"))
+                except Exception:
+                    pass
+            gpu_vendor = None
+            gpu_renderer = None
+
         settings = BrowserSettings(
             os=os_choice,
             screen=screen,
-            hardware_concurrency=hardware["cores"],
-            device_memory=hardware["memory"],
-            max_touch_points=0,  # desktop operating systems only
+            window_width=win_w,
+            window_height=win_h,
+            device_pixel_ratio=dpr,
+            hardware_concurrency=cores,
+            device_memory=memory,
+            max_touch_points=touch_points,
+            webgl_vendor=gpu_vendor,
+            webgl_renderer=gpu_renderer,
         )
+        from camoufox_pm.core.kernel_manager import kernel_manager
+        settings.user_agent = kernel_manager.generate_jittered_ua(os_name=os_choice)
+
         if region:
             settings.languages = self.language_sets.get(region, ["en-US", "en"])
             settings.locale = self.locale_map.get(region, "en_US")

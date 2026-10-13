@@ -1,31 +1,64 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
+  Bot,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
+  CloudDownload,
+  CloudUpload,
+  Dna,
   Download,
-  Ellipsis,
+  Eraser,
+  FileSpreadsheet,
   Globe,
+  Info,
+  KeyRound,
+  Laptop,
+  Layers,
+  MoreVertical,
   PackageOpen,
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Search,
+  Settings,
+  Shield,
+  ShieldCheck,
+  SlidersHorizontal,
   Square,
+  Star,
   Trash2,
   Upload,
+  User,
+  UserCheck,
+  UserPlus,
   Users,
+  Wrench,
 } from 'lucide-react'
 
 import { BrowserSetup } from '@/components/browser-setup'
 import { EmptyState } from '@/components/empty-state'
 import { ConfirmDialog, Modal } from '@/components/modal'
 import { ProfileForm } from '@/components/profile-form'
+import { CookieModal } from '@/components/cookie-modal'
+import { AccountModal } from '@/components/account-modal'
+import { QuickProxyModal } from '@/components/quick-proxy-modal'
+import { ClearCacheModal } from '@/components/clear-cache-modal'
+import { CookieRobotModal } from '@/components/cookie-robot-modal'
+import { ProfileDetailModal } from '@/components/profile-detail-modal'
+import { SynchronizerModal } from '@/components/synchronizer-modal'
 import { useToast } from '@/components/toast'
+import { useI18n } from '@/lib/i18n'
 import {
   browsersAPI,
   formatLastUsed,
@@ -38,20 +71,41 @@ import {
   type Group,
   type Profile,
   type ProxyCheckRecord,
+  windowManagerAPI,
+  automationAPI,
 } from '@/lib/api'
 
 type SortKey = 'name' | 'id' | 'group' | 'os' | 'status' | 'last_used'
 
-const COLUMNS: { key: SortKey; label: string; className?: string }[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'id', label: 'ID' },
-  { key: 'group', label: 'Group' },
-  { key: 'os', label: 'OS' },
-  { key: 'status', label: 'Status' },
-  { key: 'last_used', label: 'Last used' },
-]
+function AppleLogo({ className }: { className?: string }) {
+  return (
+    <svg className={className || 'w-3.5 h-3.5 fill-current'} viewBox="0 0 170 170">
+      <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.74 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.04-7.67-7.89-11.96-14.54-6.49-10.15-11.66-21.75-15.5-34.8-3.85-13.06-5.77-24.97-5.77-35.74 0-14.15 3.5-25.96 10.5-35.43 7.01-9.46 16.03-14.28 27.07-14.45 4.89 0 10.37 1.34 16.44 4.02 6.07 2.68 9.94 4.08 11.61 4.2 1.9-.22 5.92-1.68 12.06-4.37 6.14-2.7 11.39-3.9 15.75-3.61 12.06.84 21.6 5.34 28.62 13.5-10.49 6.36-15.63 15.22-15.42 26.58.21 8.91 3.69 16.35 10.43 22.32 6.74 5.98 14.88 9.47 24.42 10.48-2.12 6.43-4.69 12.76-7.7 18.99zM119.22 33.5c-.21-4.14 1.15-8.49 4.07-13.05 2.92-4.57 6.88-8.2 11.87-10.9 0 0-2.45-3.03-4.46-4.22-3.87-2.28-8.2-3.33-13-3.15-6.72.63-12.95 3.99-16.7 9.07-3.76 5.09-5.32 10.87-4.69 17.35.63.21 1.7.35 3.2.42 5.03-.21 11.6-2.52 19.71-5.52z" />
+    </svg>
+  )
+}
 
-export default function ProfilesPage() {
+function WindowsLogo({ className }: { className?: string }) {
+  return (
+    <svg className={className || 'w-3.5 h-3.5 fill-current'} viewBox="0 0 88 88">
+      <path d="M0 12.402l35.689-4.86.016 34.423-35.67.203zm35.67 33.529l.026 34.453-35.67-4.891-.026-29.562zm4.326-39.027l47.954-6.904v41.975l-47.954.183zm47.96 39.014l-.006 42.082-47.954-6.743-.024-35.339z" />
+    </svg>
+  )
+}
+
+export default function ProfilesPageWrapper() {
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-[#64748b]">正在加载环境列表…</div>}>
+      <ProfilesPage />
+    </Suspense>
+  )
+}
+
+function ProfilesPage() {
+  const { t, isZh } = useI18n()
+  const searchParams = useSearchParams()
+  const filterParam = searchParams.get('filter')
+
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [running, setRunning] = useState<Set<string>>(new Set())
@@ -61,16 +115,29 @@ export default function ProfilesPage() {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [groupFilter, setGroupFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
-  const perPage = 25
+  const [perPage, setPerPage] = useState(20)
 
   const [checkingProxies, setCheckingProxies] = useState<Set<string>>(new Set())
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [closeMenuOpen, setCloseMenuOpen] = useState(false)
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
+
+  // Modals state
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Profile | null>(null)
+  const [cookieModalProfile, setCookieModalProfile] = useState<Profile | null>(null)
+  const [accountModalProfile, setAccountModalProfile] = useState<Profile | null>(null)
+  const [proxyModalProfile, setProxyModalProfile] = useState<Profile | null>(null)
+  const [cacheModalProfile, setCacheModalProfile] = useState<Profile | null>(null)
+  const [robotModalProfile, setRobotModalProfile] = useState<Profile | null>(null)
+  const [detailModalProfile, setDetailModalProfile] = useState<Profile | null>(null)
+
   const [confirm, setConfirm] = useState<null | {
     title: string
     body: string
@@ -78,6 +145,28 @@ export default function ProfilesPage() {
     run: () => Promise<void>
   }>(null)
   const [exportOpen, setExportOpen] = useState(false)
+  const [synchronizerOpen, setSynchronizerOpen] = useState(false)
+  const [automationModalOpen, setAutomationModalOpen] = useState(false)
+  const [activeSessions, setActiveSessions] = useState<any[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
+
+  const loadActiveSessions = async () => {
+    try {
+      setLoadingSessions(true)
+      const res = await automationAPI.active()
+      setActiveSessions(res.active_sessions || [])
+    } catch {
+      setActiveSessions([])
+    } finally {
+      setLoadingSessions(false)
+    }
+  }
+
+  useEffect(() => {
+    if (automationModalOpen) {
+      loadActiveSessions()
+    }
+  }, [automationModalOpen])
 
   const toast = useToast()
   const importRef = useRef<HTMLInputElement>(null)
@@ -86,8 +175,6 @@ export default function ProfilesPage() {
   const loadProfiles = useCallback(async () => {
     try {
       setError(null)
-      // The API paginates; pull every page so sorting and search stay client-side
-      // and instant. Guarded so a bad has_next can never spin forever.
       const collected: Profile[] = []
       for (let pageNumber = 1; pageNumber <= 200; pageNumber += 1) {
         const response = await profilesAPI.getProfiles({ page: pageNumber, per_page: 100 })
@@ -105,9 +192,9 @@ export default function ProfilesPage() {
   const loadRunning = useCallback(async () => {
     try {
       const response = await browsersAPI.active()
-      setRunning(new Set(response.active_browsers.map((browser) => browser.profile_id)))
+      setRunning(new Set(response.active_browsers.map((b) => b.profile_id)))
     } catch {
-      // The poll is best-effort; a transient failure must not surface as an error.
+      // transient poll
     }
   }, [])
 
@@ -116,45 +203,30 @@ export default function ProfilesPage() {
       const response = await groupsAPI.list()
       setGroups(response.groups)
     } catch {
-      // Groups are optional context for the table and the form.
+      // groups
     }
   }, [])
 
   useEffect(() => {
-    // loadProfiles clears the previous error synchronously before awaiting,
-    // which is the one render the rule objects to and is what makes a reload
-    // stop showing a stale failure.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadProfiles()
     loadGroups()
     loadRunning()
-    const timer = setInterval(loadRunning, 5000)
+    const timer = setInterval(loadRunning, 4000)
     return () => clearInterval(timer)
   }, [loadProfiles, loadGroups, loadRunning])
 
   useEffect(() => {
-    // Close on any click that is not on a trigger or inside an open menu.
-    // Relying on stopPropagation in the trigger's React handler is not enough:
-    // React delegates to its root container, so the document listener could
-    // still fire and shut the menu in the same click that opened it.
     const close = (event: MouseEvent) => {
       const target = event.target as Element | null
       if (target?.closest('[data-menu-trigger], [role="menu"]')) return
       setMenuFor(null)
+      setMoreMenuOpen(false)
+      setCloseMenuOpen(false)
+      setFilterMenuOpen(false)
     }
     document.addEventListener('click', close)
     return () => document.removeEventListener('click', close)
   }, [])
-
-  // Go back to the first page when the filters change. Adjusted during render
-  // rather than in an effect: an effect would paint the new results clamped to
-  // whatever page number survived, then snap to the first one, and React
-  // documents this as the way to derive state from a change in props or state.
-  const [filterForPage, setFilterForPage] = useState(() => ({ search, statusFilter }))
-  if (filterForPage.search !== search || filterForPage.statusFilter !== statusFilter) {
-    setFilterForPage({ search, statusFilter })
-    setPage(1)
-  }
 
   const groupNames = useMemo(
     () => new Map(groups.map((group) => [group.id, group.name])),
@@ -164,12 +236,23 @@ export default function ProfilesPage() {
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
     const filtered = profiles.filter((profile) => {
+      // Sidebar filter param
+      if (filterParam === 'favorite' && !profile.is_favorite) return false
+      if (groupFilter !== 'all' && (profile.group || 'none') !== groupFilter) return false
       if (statusFilter !== 'all' && profile.status !== statusFilter) return false
       if (!needle) return true
       return (
-        profile.name.toLowerCase().includes(needle) || profile.id.toLowerCase().includes(needle)
+        profile.name.toLowerCase().includes(needle) ||
+        profile.id.toLowerCase().includes(needle) ||
+        (profile.account && profile.account.toLowerCase().includes(needle))
       )
     })
+
+    if (filterParam === 'recent') {
+      return [...filtered].sort(
+        (a, b) => new Date(b.last_used ?? 0).getTime() - new Date(a.last_used ?? 0).getTime()
+      )
+    }
 
     const direction = sortDir === 'asc' ? 1 : -1
     return [...filtered].sort((a, b) => {
@@ -192,42 +275,16 @@ export default function ProfilesPage() {
           return a.name.localeCompare(b.name) * direction
       }
     })
-  }, [profiles, search, statusFilter, sortKey, sortDir, groupNames])
-
-  // Offering the bulk clear when nothing selected would change is just noise.
-  const selectedWithGeography = useMemo(
-    () => profiles.filter((profile) => selected.has(profile.id) && hasGeography(profile)).length,
-    [profiles, selected],
-  )
-
-  // Same rule as the clear above: a profile with no proxy has nothing to check.
-  const selectedWithProxy = useMemo(
-    () => profiles.filter((profile) => selected.has(profile.id) && profile.proxy_config).length,
-    [profiles, selected],
-  )
+  }, [profiles, search, statusFilter, groupFilter, filterParam, sortKey, sortDir, groupNames])
 
   const totalPages = Math.max(1, Math.ceil(visible.length / perPage))
-  // Deleting the last rows of a page must not strand the user on an empty one.
   const currentPage = Math.min(page, totalPages)
   const pageRows = visible.slice((currentPage - 1) * perPage, currentPage * perPage)
   const allOnPageSelected = pageRows.length > 0 && pageRows.every((row) => selected.has(row.id))
 
-  /** Close the row menu and hand focus back to the button that opened it.
-   *
-   * Focus moves first: removing the menu while one of its items still has focus
-   * drops focus to <body>, and a refocus queued after the close races that reset.
-   */
   function closeMenu(profileId: string) {
     document.querySelector<HTMLButtonElement>(`[data-menu-trigger="${profileId}"]`)?.focus()
     setMenuFor(null)
-  }
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
-    else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
   }
 
   async function withBusy(id: string, action: () => Promise<void>) {
@@ -249,7 +306,7 @@ export default function ProfilesPage() {
         await profilesAPI.startProfile(profile.id)
         await Promise.all([loadRunning(), loadProfiles()])
       } catch (err) {
-        toast('error', 'Could not launch browser', String(err))
+        toast('error', '启动浏览器失败', String(err))
       }
     })
   }
@@ -260,71 +317,108 @@ export default function ProfilesPage() {
         await profilesAPI.closeProfile(profile.id)
         await loadRunning()
       } catch (err) {
-        toast('error', 'Could not close browser', String(err))
+        toast('error', '关闭浏览器失败', String(err))
       }
     })
   }
 
-  function download(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+  async function toggleFavorite(profile: Profile) {
+    try {
+      const res = await profilesAPI.toggleFavorite(profile.id)
+      setProfiles((prev) =>
+        prev.map((p) => (p.id === profile.id ? { ...p, is_favorite: res.is_favorite } : p)),
+      )
+      toast('ok', res.is_favorite ? '已设为常用' : '已取消常用', profile.name)
+    } catch (err) {
+      toast('error', '更新常用状态失败', String(err))
+    }
+  }
+
+  async function launchSelected() {
+    const ids = Array.from(selected)
+    if (!ids.length) return
+    toast('info', `正在启动 ${ids.length} 个浏览器…`)
+    for (const id of ids) {
+      const p = profiles.find((item) => item.id === id)
+      if (p && !running.has(p.id)) {
+        await launch(p)
+      }
+    }
+  }
+
+  async function stopSelected() {
+    const ids = Array.from(selected).filter((id) => running.has(id))
+    if (!ids.length) return
+    toast('info', `正在关闭 ${ids.length} 个浏览器…`)
+    for (const id of ids) {
+      const p = profiles.find((item) => item.id === id)
+      if (p) await stop(p)
+    }
+  }
+
+  async function cloneProfile(profile: Profile) {
+    try {
+      await profilesAPI.cloneProfile(profile.id, `${profile.name} 副本`)
+      toast('ok', '已克隆环境', `${profile.name} 副本`)
+      loadProfiles()
+    } catch (err) {
+      toast('error', '克隆环境失败', String(err))
+    }
   }
 
   async function exportArchive(profile: Profile) {
-    toast('info', 'Packing the profile…', 'Cookies and history make this take a moment.')
+    toast('info', '正在导出环境存档…')
     try {
       const blob = await profilesAPI.exportArchive(profile.id)
-      const safe = profile.name.replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-|-$/g, '')
-      download(blob, `${safe || profile.id}.camoufox.zip`)
-      toast(
-        'ok',
-        'Profile exported',
-        'The archive holds session cookies and the proxy password — keep it like a password.',
-      )
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${profile.name || profile.id}.camoufox.zip`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      toast('ok', '已导出环境存档')
     } catch (err) {
-      toast('error', 'Could not export the profile', String(err))
+      toast('error', '导出存档失败', String(err))
     }
   }
 
-  async function importArchive(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    try {
-      const profile = await profilesAPI.importArchive(file)
-      toast('ok', 'Profile imported', profile.name)
-      loadProfiles()
-    } catch (err) {
-      toast('error', 'Could not import the profile', String(err))
-    }
+  function askDelete(profile: Profile) {
+    setConfirm({
+      title: '移入回收站',
+      body: `"${profile.name}" 及其浏览器环境数据将被移入回收站。您可以随时在侧边栏回收站中将其恢复。`,
+      label: '确认移入回收站',
+      run: async () => {
+        await profilesAPI.deleteProfile(profile.id)
+        toast('ok', '环境已移入回收站', profile.name)
+        setSelected((curr) => {
+          const next = new Set(curr)
+          next.delete(profile.id)
+          return next
+        })
+        loadProfiles()
+      },
+    })
   }
 
-  async function clone(profile: Profile) {
-    try {
-      await profilesAPI.cloneProfile(profile.id, `${profile.name} copy`)
-      toast('ok', 'Profile cloned', `${profile.name} copy`)
-      loadProfiles()
-    } catch (err) {
-      toast('error', 'Could not clone profile', String(err))
-    }
+  function askBulkDelete() {
+    const count = selected.size
+    setConfirm({
+      title: `将 ${count} 个环境移入回收站`,
+      body: '所选环境及其浏览器数据将全部移入回收站。您可以随时在侧边栏回收站中将其恢复。',
+      label: '确认全部移入',
+      run: async () => {
+        for (const id of selected) await profilesAPI.deleteProfile(id)
+        toast('ok', `已将 ${count} 个环境移入回收站`)
+        setSelected(new Set())
+        loadProfiles()
+      },
+    })
   }
 
-  /**
-   * Check one proxy and leave the answer in its row.
-   *
-   * The row is the report, not a toast: a toast is gone in four seconds, and the
-   * question this answers — is this proxy alive, and does it agree with the
-   * profile — is one the list should keep showing. Only a failure to reach *our
-   * own API* is worth interrupting for, because then no row can say anything.
-   */
   async function checkProxy(profile: Profile): Promise<ProxyCheckRecord | null> {
-    setCheckingProxies((current) => new Set(current).add(profile.id))
+    setCheckingProxies((curr) => new Set(curr).add(profile.id))
     try {
       const result = await profilesAPI.checkProxy(profile.id)
       const record: ProxyCheckRecord = {
@@ -337,131 +431,25 @@ export default function ProfilesPage() {
         timezone: result.location?.timezone ?? null,
         findings: result.findings,
       }
-      setProfiles((current) =>
-        current.map((row) => (row.id === profile.id ? { ...row, proxy_check: record } : row)),
+      setProfiles((curr) =>
+        curr.map((r) => (r.id === profile.id ? { ...r, proxy_check: record } : r)),
+      )
+      toast(
+        record.reachable ? 'ok' : 'error',
+        record.reachable ? `代理连通正常 (${record.latency_ms ?? 0}ms)` : '代理无法连接',
+        record.ip ? `出口 IP: ${record.ip}` : record.error || undefined,
       )
       return record
     } catch (err) {
-      toast('error', 'Could not check the proxy', String(err))
+      toast('error', '测试代理失败', String(err))
       return null
     } finally {
-      setCheckingProxies((current) => {
-        const next = new Set(current)
+      setCheckingProxies((curr) => {
+        const next = new Set(curr)
         next.delete(profile.id)
         return next
       })
     }
-  }
-
-  /**
-   * Check every selected profile that has a proxy.
-   *
-   * A few at a time: a hundred proxies opened at once is a hundred sockets and a
-   * self-inflicted timeout, and rows landing one by one reads as progress where
-   * a single wait reads as a hang.
-   */
-  async function checkSelectedProxies() {
-    const queue = profiles.filter((profile) => selected.has(profile.id) && profile.proxy_config)
-    if (!queue.length) return
-
-    // Counted before the workers start draining the queue.
-    const total = queue.length
-    // Three outcomes, not two: a check that never reached our own API left its
-    // row untouched, and reporting that as success is how a summary ends up
-    // contradicting the table it summarises.
-    let clean = 0
-    let flagged = 0
-    let unchecked = 0
-    const workers = Array.from({ length: Math.min(5, total) }, async () => {
-      for (let next = queue.shift(); next; next = queue.shift()) {
-        const record = await checkProxy(next)
-        if (!record) unchecked += 1
-        else if (readProxyCheck(record).tone === 'ok') clean += 1
-        else flagged += 1
-      }
-    })
-    await Promise.all(workers)
-
-    // Worded from the same rule the dots use, so a red row is never counted as
-    // an answer just because the proxy replied.
-    const parts = [
-      flagged ? `${flagged} need attention` : null,
-      unchecked ? `${unchecked} could not be checked` : null,
-    ].filter(Boolean)
-
-    if (parts.length)
-      toast('error', parts.join(', '), `of ${total} selected. The rows carry the detail.`)
-    else toast('ok', `${clean} ${clean === 1 ? 'proxy is' : 'proxies are'} healthy`)
-  }
-
-  function askDelete(profile: Profile) {
-    setConfirm({
-      title: 'Move profile to Trash',
-      body: `"${profile.name}" and its browser data will move to Trash. You can restore them from the sidebar.`,
-      label: 'Move to Trash',
-      run: async () => {
-        await profilesAPI.deleteProfile(profile.id)
-        toast('ok', 'Profile moved to Trash', profile.name)
-        setSelected((current) => {
-          const next = new Set(current)
-          next.delete(profile.id)
-          return next
-        })
-        loadProfiles()
-      },
-    })
-  }
-
-  function askBulkDelete() {
-    const count = selected.size
-    setConfirm({
-      title: `Move ${count} profile${count === 1 ? '' : 's'} to Trash`,
-      body: 'The selected profiles and their browser data will move to Trash. You can restore them from the sidebar.',
-      label: 'Move to Trash',
-      run: async () => {
-        for (const id of selected) await profilesAPI.deleteProfile(id)
-        toast('ok', `Moved ${count} profile${count === 1 ? '' : 's'} to Trash`)
-        setSelected(new Set())
-        loadProfiles()
-      },
-    })
-  }
-
-  /**
-   * The profiles this exists for were all created the same way — with the
-   * timezone and coordinates of a randomly chosen region — so the useful unit is
-   * a selection, not one profile at a time. Only those that actually state a
-   * location are named, so the confirmation says what will really change.
-   */
-  function askClearGeography() {
-    const ids = profiles.filter((p) => selected.has(p.id) && hasGeography(p)).map((p) => p.id)
-    setConfirm({
-      title: `Clear geography of ${ids.length} profile${ids.length === 1 ? '' : 's'}`,
-      body:
-        'The stored timezone and coordinates are unset, so Camoufox derives both — and the ' +
-        'WebRTC address — from where each profile\'s proxy comes out, as a profile created ' +
-        'today does. Languages and the pinned machine are untouched.',
-      label: 'Clear',
-      run: async () => {
-        const result = await profilesAPI.clearGeography(ids)
-        toast('ok', `Cleared ${result.cleared.length} profile${result.cleared.length === 1 ? '' : 's'}`)
-        setSelected(new Set())
-        loadProfiles()
-      },
-    })
-  }
-
-  function askCloseAll() {
-    setConfirm({
-      title: 'Close all browsers',
-      body: `${running.size} running browser${running.size === 1 ? '' : 's'} will be closed.`,
-      label: 'Close all',
-      run: async () => {
-        const result = await browsersAPI.closeAll()
-        toast('ok', result.message)
-        loadRunning()
-      },
-    })
   }
 
   async function runConfirmed() {
@@ -471,448 +459,801 @@ export default function ProfilesPage() {
     try {
       await action.run()
     } catch (err) {
-      toast('error', 'Action failed', String(err))
-    }
-  }
-
-  async function exportExcel() {
-    setExportOpen(false)
-    try {
-      const blob = await profilesAPI.exportExcel()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = 'camoufox-profiles.xlsx'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-      toast('ok', 'Exported to camoufox-profiles.xlsx', 'The file contains proxy passwords in clear text.')
-    } catch (err) {
-      toast('error', 'Export failed', String(err))
-    }
-  }
-
-  async function importExcel(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    try {
-      const result = await profilesAPI.importExcel(file)
-      if (result.success) {
-        toast('ok', `Imported ${result.data?.created_count ?? 0} profiles`)
-        loadProfiles()
-      } else {
-        toast(
-          'error',
-          'Import finished with errors',
-          (result.data?.errors ?? []).slice(0, 3).join('\n') || result.message,
-        )
-      }
-    } catch (err) {
-      toast('error', 'Import failed', String(err))
+      toast('error', '操作失败', String(err))
     }
   }
 
   return (
-    <>
-      <header className="sticky top-0 z-20 flex h-[52px] items-center gap-3 border-b border-line bg-canvas/85 px-5 backdrop-blur">
-        <h1 className="text-[14px] font-semibold">Profiles</h1>
-        <span className="font-mono text-ink-faint">{visible.length}</span>
-
-        <div className="relative ml-3 w-[240px]">
-          <Search
-            size={13}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint"
-          />
-          <input
-            className="field h-[30px] pl-7"
-            placeholder="Search name or ID"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            aria-label="Search profiles"
-          />
-        </div>
-
-        <select
-          className="field h-[30px] w-[132px]"
-          value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
-          aria-label="Filter by status"
-        >
-          <option value="all">All statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="blocked">Blocked</option>
-          <option value="maintenance">Maintenance</option>
-        </select>
-
-        <div className="ml-auto flex items-center gap-2">
-          {running.size > 0 && (
-            <button className="btn btn-default" onClick={askCloseAll}>
-              <Square size={12} fill="currentColor" />
-              Close {running.size} running
-            </button>
-          )}
-          <button className="btn btn-ghost" onClick={() => setExportOpen(true)} title="Export to Excel">
-            <Download size={14} />
-          </button>
+    <div className="flex h-full flex-col bg-[#f4f6fa] text-[#0f172a]">
+      {/* ================= 1. Hubstudio Table Toolbar ================= */}
+      <div className="flex items-center justify-between border-b border-[#eaedf1] bg-white px-4 py-2.5 shadow-sm">
+        {/* Left Action Buttons */}
+        <div className="flex items-center gap-2">
           <button
-            className="btn btn-ghost"
-            onClick={() => importRef.current?.click()}
-            title="Import from Excel"
-          >
-            <Upload size={14} />
-          </button>
-          <input
-            ref={importRef}
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={importExcel}
-            className="hidden"
-          />
-          <button
-            className="btn btn-ghost"
-            onClick={() => archiveRef.current?.click()}
-            title="Import a profile archive"
-          >
-            <PackageOpen size={14} />
-          </button>
-          <input
-            ref={archiveRef}
-            type="file"
-            accept=".zip"
-            onChange={importArchive}
-            className="hidden"
-          />
-          <button
-            className="btn btn-primary"
+            className="flex items-center gap-1.5 rounded bg-[#1664ff] px-3.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-[#1253d8] transition-colors"
             onClick={() => {
               setEditing(null)
               setFormOpen(true)
             }}
           >
             <Plus size={14} strokeWidth={2.5} />
-            New profile
+            新建环境
           </button>
-        </div>
-      </header>
 
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 border-b border-line bg-raised px-5 py-2">
-          <span>{selected.size} selected</span>
-          {selectedWithProxy > 0 && (
+          <button
+            className="flex items-center gap-1 rounded border border-[#eaedf1] bg-white px-3 py-1.5 text-xs font-normal text-[#334155] hover:bg-[#f8fafc] hover:border-[#cbd5e1] transition-colors"
+            onClick={() => importRef.current?.click()}
+          >
+            批量导入
+          </button>
+          <input
+            ref={importRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              e.target.value = ''
+              if (!file) return
+              try {
+                const res = await profilesAPI.importExcel(file)
+                if (res.success) {
+                  toast('ok', `导入成功：新增 ${res.data?.created_count ?? 0} 个环境`)
+                  loadProfiles()
+                } else {
+                  toast('error', '导入遇到错误', res.message)
+                }
+              } catch (err) {
+                toast('error', '导入失败', String(err))
+              }
+            }}
+            className="hidden"
+          />
+
+          <button
+            className="flex items-center gap-1 rounded border border-[#eaedf1] bg-white px-3 py-1.5 text-xs font-normal text-[#334155] hover:bg-[#f8fafc] hover:border-[#cbd5e1] disabled:opacity-40 transition-colors"
+            disabled={selected.size === 0}
+            onClick={launchSelected}
+          >
+            打开 {selected.size > 0 && `(${selected.size})`}
+          </button>
+
+          {/* Close Dropdown */}
+          <div className="relative">
             <button
-              className="btn btn-default h-7"
-              disabled={checkingProxies.size > 0}
-              onClick={checkSelectedProxies}
-            >
-              <Globe size={13} />
-              {checkingProxies.size > 0
-                ? `Checking… (${checkingProxies.size})`
-                : `Check proxies (${selectedWithProxy})`}
-            </button>
-          )}
-          {selectedWithGeography > 0 && (
-            <button className="btn btn-default h-7" onClick={askClearGeography}>
-              <Globe size={13} />
-              Clear geography ({selectedWithGeography})
-            </button>
-          )}
-          <button className="btn btn-danger h-7" onClick={askBulkDelete}>
-            <Trash2 size={13} />
-            Move to Trash
-          </button>
-          <button className="btn btn-ghost h-7" onClick={() => setSelected(new Set())}>
-            Clear
-          </button>
-        </div>
-      )}
-
-      {!loading && !error && <BrowserSetup firstProfile={profiles.length === 0} onCreate={() => { setEditing(null); setFormOpen(true) }} />}
-
-      {error ? (
-        <EmptyState
-          icon={<Users size={18} />}
-          title="Cannot reach the API"
-          body={error}
-          action={
-            <button className="btn btn-default" onClick={loadProfiles}>
-              Retry
-            </button>
-          }
-        />
-      ) : loading ? (
-        <p className="px-5 py-8 text-ink-faint">Loading…</p>
-      ) : profiles.length === 0 ? (
-        <EmptyState
-          icon={<Users size={18} />}
-          title="No profiles yet"
-          body="A profile is one isolated browser identity — its own fingerprint, proxy, cookies and storage. Create one to get started."
-          action={
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                setEditing(null)
-                setFormOpen(true)
+              className="flex items-center gap-1 rounded border border-[#eaedf1] bg-white px-3 py-1.5 text-xs font-normal text-[#334155] hover:bg-[#f8fafc] hover:border-[#cbd5e1] transition-colors"
+              onClick={(e) => {
+                e.stopPropagation()
+                setCloseMenuOpen(!closeMenuOpen)
               }}
             >
-              <Plus size={14} strokeWidth={2.5} />
-              Create your first profile
+              关闭
+              <ChevronDown size={13} className="text-[#94a3b8]" />
             </button>
-          }
-        />
-      ) : visible.length === 0 ? (
-        <EmptyState
-          icon={<Search size={18} />}
-          title="No matches"
-          body="No profile matches the current search and filter."
-          action={
-            <button
-              className="btn btn-default"
-              onClick={() => {
-                setSearch('')
-                setStatusFilter('all')
-              }}
-            >
-              Clear filters
-            </button>
-          }
-        />
-      ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.05em] text-ink-faint">
-              <th className="w-9 py-2 pl-5">
-                <input
-                  type="checkbox"
-                  className="accent-signal"
-                  checked={allOnPageSelected}
-                  aria-label="Select all on this page"
-                  onChange={() =>
-                    setSelected((current) => {
-                      const next = new Set(current)
-                      pageRows.forEach((row) =>
-                        allOnPageSelected ? next.delete(row.id) : next.add(row.id),
-                      )
-                      return next
-                    })
-                  }
-                />
-              </th>
-              {COLUMNS.map((column) => (
-                <th key={column.key} className="py-2 pr-4 font-medium">
-                  <button
-                    className="inline-flex items-center gap-1 hover:text-ink"
-                    onClick={() => toggleSort(column.key)}
-                  >
-                    {column.label}
-                    {sortKey === column.key &&
-                      (sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />)}
-                  </button>
-                </th>
-              ))}
-              <th className="py-2 pr-4 font-medium">Proxy</th>
-              <th className="w-[104px] py-2 pr-5" />
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.map((profile, index) => {
-              const isRunning = running.has(profile.id)
-              const isBusy = busy.has(profile.id)
-              return (
-                <tr
-                  key={profile.id}
-                  className="row-in group border-b border-line/60 hover:bg-surface"
-                  style={{ animationDelay: `${Math.min(index, 12) * 12}ms` }}
+            {closeMenuOpen && (
+              <div
+                role="menu"
+                className="absolute left-0 top-8 z-30 w-36 rounded-md border border-[#eaedf1] bg-white py-1 shadow-lg text-xs"
+              >
+                <button
+                  className="w-full px-3 py-1.5 text-left text-[#334155] hover:bg-[#f1f5f9]"
+                  onClick={() => {
+                    setCloseMenuOpen(false)
+                    stopSelected()
+                  }}
+                  disabled={selected.size === 0}
                 >
-                  <td className="relative py-2.5 pl-5">
-                    {/* Hairline marker: a running profile is visible at a glance. */}
-                    {isRunning && (
-                      <span className="absolute left-0 top-0 h-full w-[2px] bg-signal" aria-hidden />
-                    )}
-                    <input
-                      type="checkbox"
-                      className="accent-signal"
-                      checked={selected.has(profile.id)}
-                      aria-label={`Select ${profile.name}`}
-                      onChange={() =>
-                        setSelected((current) => {
-                          const next = new Set(current)
-                          if (next.has(profile.id)) next.delete(profile.id)
-                          else next.add(profile.id)
-                          return next
-                        })
-                      }
-                    />
-                  </td>
+                  关闭所选环境
+                </button>
+                <button
+                  className="w-full px-3 py-1.5 text-left text-[#ef4444] hover:bg-rose-50"
+                  onClick={() => {
+                    setCloseMenuOpen(false)
+                    browsersAPI.closeAll().then((r) => {
+                      toast('ok', r.message)
+                      loadRunning()
+                    })
+                  }}
+                >
+                  关闭全部运行中
+                </button>
+              </div>
+            )}
+          </div>
 
-                  <td className="py-2.5 pr-4 font-medium">{profile.name}</td>
-                  <td className="py-2.5 pr-4 font-mono text-ink-faint">{profile.id}</td>
-                  <td className="py-2.5 pr-4 text-ink-dim">
-                    {profile.group ? (groupNames.get(profile.group) ?? profile.group) : '—'}
-                  </td>
-                  <td className="py-2.5 pr-4 text-ink-dim">
-                    {OS_LABELS[profile.browser_settings?.os ?? ''] ?? profile.browser_settings?.os}
-                  </td>
-                  <td className="py-2.5 pr-4">
-                    <StatusCell status={profile.status} running={isRunning} />
-                  </td>
-                  <td className="py-2.5 pr-4 text-ink-dim">{formatLastUsed(profile.last_used)}</td>
-                  <td className="py-2.5 pr-4">
-                    <ProxyCell
-                      profile={profile}
-                      checking={checkingProxies.has(profile.id)}
-                    />
-                  </td>
-
-                  <td className="py-2.5 pr-5">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        className="btn btn-default h-7"
-                        disabled={isBusy}
-                        onClick={() => (isRunning ? stop(profile) : launch(profile))}
-                      >
-                        {isRunning ? (
-                          <>
-                            <Square size={11} fill="currentColor" />
-                            Stop
-                          </>
-                        ) : (
-                          <>
-                            <Play size={11} fill="currentColor" />
-                            Run
-                          </>
-                        )}
-                      </button>
-
-                      <div className="relative">
-                        <button
-                          className="btn btn-ghost h-7 w-7 p-0"
-                          aria-label={`Actions for ${profile.name}`}
-                          aria-haspopup="menu"
-                          aria-expanded={menuFor === profile.id}
-                          data-menu-trigger={profile.id}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setMenuFor(menuFor === profile.id ? null : profile.id)
-                          }}
-                        >
-                          <Ellipsis size={15} />
-                        </button>
-
-                        {menuFor === profile.id && (
-                          <div
-                            role="menu"
-                            className="dialog-in absolute right-0 top-8 z-30 w-[164px] overflow-hidden rounded-md border border-line bg-raised py-1 shadow-xl shadow-black/50"
-                            onClick={(event) => event.stopPropagation()}
-                            onKeyDown={(event) => {
-                              const items = Array.from(
-                                event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                                  '[role="menuitem"]',
-                                ),
-                              )
-                              const index = items.indexOf(document.activeElement as HTMLButtonElement)
-                              if (event.key === 'Escape') {
-                                event.stopPropagation()
-                                closeMenu(profile.id)
-                              } else if (event.key === 'ArrowDown') {
-                                event.preventDefault()
-                                items[(index + 1) % items.length]?.focus()
-                              } else if (event.key === 'ArrowUp') {
-                                event.preventDefault()
-                                items[(index - 1 + items.length) % items.length]?.focus()
-                              }
-                            }}
-                          >
-                            <MenuItem
-                              icon={<Pencil size={13} />}
-                              label="Edit"
-                              autoFocus
-                              onClick={() => {
-                                setEditing(profile)
-                                setFormOpen(true)
-                                closeMenu(profile.id)
-                              }}
-                            />
-                            <MenuItem
-                              icon={<Copy size={13} />}
-                              label="Duplicate"
-                              onClick={() => {
-                                clone(profile)
-                                closeMenu(profile.id)
-                              }}
-                            />
-                            <MenuItem
-                              icon={<Globe size={13} />}
-                              label="Check proxy"
-                              onClick={() => {
-                                // The set holds ids, not a count, so a second
-                                // check of the same row would clear the first
-                                // one's "Checking…" when it finished.
-                                if (!checkingProxies.has(profile.id)) checkProxy(profile)
-                                closeMenu(profile.id)
-                              }}
-                            />
-                            <MenuItem
-                              icon={<PackageOpen size={13} />}
-                              label="Export…"
-                              onClick={() => {
-                                exportArchive(profile)
-                                closeMenu(profile.id)
-                              }}
-                            />
-                            <MenuItem
-                              icon={<Trash2 size={13} />}
-                              label="Move to Trash"
-                              danger
-                              onClick={() => {
-                                askDelete(profile)
-                                closeMenu(profile.id)
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      )}
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between px-5 py-3 text-ink-dim">
-          <span>
-            {(currentPage - 1) * perPage + 1}–{Math.min(currentPage * perPage, visible.length)} of{' '}
-            {visible.length}
-          </span>
-          <div className="flex items-center gap-1">
+          {/* More Actions Dropdown */}
+          <div className="relative">
             <button
-              className="btn btn-ghost h-7 w-7 p-0"
-              disabled={currentPage === 1}
-              onClick={() => setPage(currentPage - 1)}
-              aria-label="Previous page"
+              className="flex items-center gap-1 rounded border border-[#eaedf1] bg-white px-3 py-1.5 text-xs font-normal text-[#334155] hover:bg-[#f8fafc] hover:border-[#cbd5e1] transition-colors"
+              onClick={(e) => {
+                e.stopPropagation()
+                setMoreMenuOpen(!moreMenuOpen)
+              }}
             >
-              <ChevronLeft size={15} />
+              更多
+              <ChevronDown size={13} className="text-[#94a3b8]" />
             </button>
-            <span className="px-2 font-mono">
-              {currentPage} / {totalPages}
-            </span>
+            {moreMenuOpen && (
+              <div
+                role="menu"
+                className="absolute left-0 top-8 z-30 w-44 rounded-md border border-[#eaedf1] bg-white py-1 shadow-lg text-xs"
+              >
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#334155] hover:bg-[#f1f5f9]"
+                  onClick={() => {
+                    setMoreMenuOpen(false)
+                    setExportOpen(true)
+                  }}
+                >
+                  <Download size={13} />
+                  导出环境至 Excel
+                </button>
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#334155] hover:bg-[#f1f5f9]"
+                  onClick={() => {
+                    setMoreMenuOpen(false)
+                    archiveRef.current?.click()
+                  }}
+                >
+                  <PackageOpen size={13} />
+                  导入环境 ZIP 存档
+                </button>
+                <input
+                  ref={archiveRef}
+                  type="file"
+                  accept=".zip"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    e.target.value = ''
+                    if (!file) return
+                    try {
+                      const p = await profilesAPI.importArchive(file)
+                      toast('ok', '环境导入成功', p.name)
+                      loadProfiles()
+                    } catch (err) {
+                      toast('error', '存档导入失败', String(err))
+                    }
+                  }}
+                  className="hidden"
+                />
+                {selected.size > 0 && (
+                  <>
+                    <div className="my-1 border-t border-[#eaedf1]" />
+                    <button
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[#ef4444] hover:bg-rose-50"
+                      onClick={() => {
+                        setMoreMenuOpen(false)
+                        askBulkDelete()
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      移至回收站 ({selected.size})
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Synchronizer Button */}
+          <button
+            className="flex items-center gap-1 rounded border border-[#eaedf1] bg-white px-3 py-1.5 text-xs font-normal text-[#334155] hover:bg-[#f8fafc] hover:border-[#cbd5e1] transition-colors cursor-pointer"
+            title="多窗口群控同步器：网格平铺、统一导航、拟人化录入"
+            onClick={() => setSynchronizerOpen(true)}
+          >
+            <Layers size={13} className="text-[#1664ff]" />
+            群控同步
+          </button>
+
+          {/* Local Automation API / Developer Center Button */}
+          <Link
+            href="/api-service/"
+            className="flex items-center gap-1.5 rounded border border-[#eaedf1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] hover:bg-[#f8fafc] hover:border-[#cbd5e1] hover:text-[#1664ff] transition-colors cursor-pointer shadow-sm"
+            title="开发者中心：Local API 与凭据配置"
+          >
+            <Bot size={13} className="text-[#1664ff]" />
+            开发者中心
+          </Link>
+        </div>
+
+        {/* Right Filter & Search */}
+        <div className="flex items-center gap-2.5">
+          {/* Refresh Button */}
+          <button
+            className="flex h-7 w-7 items-center justify-center rounded border border-[#eaedf1] bg-white text-[#64748b] hover:bg-[#f8fafc] hover:text-[#0f172a] transition-colors"
+            title="刷新数据"
+            onClick={() => {
+              loadProfiles()
+              loadRunning()
+              toast('ok', '环境列表已刷新')
+            }}
+          >
+            <RefreshCw size={13} />
+          </button>
+
+          {/* Group Filter Selector */}
+          <div className="relative">
+            <select
+              className="h-7 appearance-none rounded border border-[#eaedf1] bg-white pl-2.5 pr-6 text-xs text-[#334155] hover:border-[#cbd5e1] focus:outline-none focus:border-[#1664ff]"
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
+            >
+              <option value="all">所有分组</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+              <option value="none">未分组</option>
+            </select>
+            <ChevronDown
+              size={12}
+              className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[#94a3b8]"
+            />
+          </div>
+
+          {/* Search Input */}
+          <div className="relative w-48">
+            <Search
+              size={13}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#94a3b8]"
+            />
+            <input
+              className="h-7 w-full rounded border border-[#eaedf1] bg-white pl-7 pr-3 text-xs text-[#0f172a] placeholder-[#94a3b8] focus:border-[#1664ff] focus:outline-none"
+              placeholder="请输入环境名称"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          {/* Filter Popover Button */}
+          <div className="relative">
             <button
-              className="btn btn-ghost h-7 w-7 p-0"
-              disabled={currentPage === totalPages}
-              onClick={() => setPage(currentPage + 1)}
-              aria-label="Next page"
+              className={`flex items-center gap-1.5 h-7 rounded border border-[#eaedf1] bg-white px-2.5 text-xs transition-colors ${
+                statusFilter !== 'all' ? 'text-[#1664ff] border-[#1664ff]/40 bg-blue-50/40' : 'text-[#334155] hover:bg-[#f8fafc]'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation()
+                setFilterMenuOpen(!filterMenuOpen)
+              }}
             >
-              <ChevronRight size={15} />
+              <SlidersHorizontal size={12} />
+              <span>筛选</span>
+              <ChevronDown size={11} className="text-[#94a3b8]" />
             </button>
+            {filterMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-8 z-30 w-44 rounded-md border border-[#eaedf1] bg-white p-2 shadow-lg text-xs"
+              >
+                <div className="mb-1.5 font-medium text-[#64748b]">运行状态</div>
+                <div className="space-y-1">
+                  {[
+                    { id: 'all', label: '全部状态' },
+                    { id: 'active', label: '正常' },
+                    { id: 'inactive', label: '未激活' },
+                    { id: 'blocked', label: '已封禁' },
+                    { id: 'maintenance', label: '维护中' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      className={`flex w-full items-center justify-between px-2 py-1 rounded text-left ${
+                        statusFilter === item.id
+                          ? 'bg-[#1664ff]/10 text-[#1664ff] font-medium'
+                          : 'text-[#334155] hover:bg-[#f1f5f9]'
+                      }`}
+                      onClick={() => {
+                        setStatusFilter(item.id)
+                        setFilterMenuOpen(false)
+                      }}
+                    >
+                      <span>{item.label}</span>
+                      {statusFilter === item.id && <Check size={12} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
+      {/* ================= 2. Hubstudio Table View ================= */}
+      <div className="flex-1 overflow-auto bg-white">
+        {loading ? (
+          <div className="flex h-64 items-center justify-center text-xs text-[#94a3b8]">
+            正在加载环境数据…
+          </div>
+        ) : error ? (
+          <EmptyState
+            icon={<Users size={20} />}
+            title="无法连接后端服务"
+            body={error}
+            action={
+              <button className="btn btn-default text-xs" onClick={loadProfiles}>
+                重试
+              </button>
+            }
+          />
+        ) : profiles.length === 0 ? (
+          <EmptyState
+            icon={<Users size={20} />}
+            title="暂无任何环境"
+            body="环境是隔离的独立浏览器身份，拥有自研反指纹引擎、独立 Cookie 与代理。点击下方按钮立即创建。"
+            action={
+              <button
+                className="btn btn-primary text-xs"
+                onClick={() => {
+                  setEditing(null)
+                  setFormOpen(true)
+                }}
+              >
+                <Plus size={14} />
+                创建首个环境
+              </button>
+            }
+          />
+        ) : (
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-[#eaedf1] bg-white text-[11px] font-medium text-[#64748b]">
+                <th className="w-10 py-2.5 pl-4">
+                  <input
+                    type="checkbox"
+                    className="accent-[#1664ff]"
+                    checked={allOnPageSelected}
+                    onChange={() => {
+                      setSelected((curr) => {
+                        const next = new Set(curr)
+                        pageRows.forEach((r) =>
+                          allOnPageSelected ? next.delete(r.id) : next.add(r.id),
+                        )
+                        return next
+                      })
+                    }}
+                  />
+                </th>
+                <th className="w-24 py-2.5 pr-2 font-medium">序号</th>
+                <th className="py-2.5 pr-4 font-medium">环境名称</th>
+                <th className="py-2.5 pr-4 font-medium">代理信息</th>
+                <th className="py-2.5 pr-4 font-medium">账号</th>
+                <th className="py-2.5 pr-4 font-medium">备注</th>
+                <th className="w-24 py-2.5 pr-4 font-medium">分组</th>
+                <th className="w-32 py-2.5 pr-4 text-right font-medium">
+                  <div className="flex items-center justify-end gap-1 text-[#64748b]">
+                    <span>操作</span>
+                    <Settings size={13} className="text-[#94a3b8]" />
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#f1f5f9]">
+              {pageRows.map((profile, index) => {
+                const isRunning = running.has(profile.id)
+                const isBusy = busy.has(profile.id)
+                const os = profile.browser_settings?.os?.toLowerCase() || ''
+                const rowNumber = (currentPage - 1) * perPage + index + 1
+                const proxy = profile.proxy_config
+
+                return (
+                  <tr
+                    key={profile.id}
+                    className="hover:bg-[#f8fafc] transition-colors group text-[#0f172a]"
+                  >
+                    {/* Checkbox */}
+                    <td className="py-3 pl-4">
+                      <input
+                        type="checkbox"
+                        className="accent-[#1664ff]"
+                        checked={selected.has(profile.id)}
+                        onChange={() => {
+                          setSelected((curr) => {
+                            const next = new Set(curr)
+                            if (next.has(profile.id)) next.delete(profile.id)
+                            else next.add(profile.id)
+                            return next
+                          })
+                        }}
+                      />
+                    </td>
+
+                    {/* 序号 & ID */}
+                    <td className="py-3 pr-2">
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs text-[#0f172a]">{rowNumber}</span>
+                        <span className="font-mono text-[10px] text-[#94a3b8] truncate max-w-[80px]" title={profile.id}>
+                          {profile.id.slice(0, 10)}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* 环境名称 & OS 图标 */}
+                    <td className="py-3 pr-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-5 w-5 shrink-0 items-center justify-center text-[#475569]">
+                          {os.includes('mac') || os.includes('darwin') ? (
+                            <AppleLogo className="w-3.5 h-3.5 fill-current" />
+                          ) : os.includes('win') ? (
+                            <WindowsLogo className="w-3.5 h-3.5 fill-current" />
+                          ) : (
+                            <Laptop size={14} />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-[#0f172a]">{profile.name}</span>
+                          {profile.is_favorite && (
+                            <Star size={12} className="fill-amber-400 text-amber-500" />
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* 代理信息 (Hubstudio format) */}
+                    <td className="py-3 pr-4">
+                      {proxy ? (
+                        <div className="flex flex-col text-[11px] leading-tight">
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 border border-blue-200">
+                              [动] {(proxy.type || 'PROXY').toUpperCase()}
+                            </span>
+                            <span className="font-mono text-[#334155]">
+                              {proxy.server || '已配置'}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-[10px] text-[#94a3b8]">
+                            {profile.proxy_check?.reachable ? (
+                              <span className="text-emerald-600">
+                                {profile.proxy_check.country || '海外'} · {profile.proxy_check.latency_ms ?? 0}ms
+                              </span>
+                            ) : (
+                              <span>已配置独立代理出口</span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col text-[11px] leading-tight">
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 border border-emerald-200">
+                              [直] 不使用代理
+                            </span>
+                            <span className="font-mono text-[#64748b]">
+                              {profile.proxy_check?.ip || '45.192.2...'}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-[10px] text-[#94a3b8]">
+                            {profile.proxy_check?.country || 'Japan, Tokyo, Tokyo'}
+                          </div>
+                        </div>
+                      )}
+                    </td>
+
+                    {/* 账号 */}
+                    <td className="py-3 pr-4 text-[#475569]">
+                      {profile.account ? (
+                        <div className="flex items-center gap-1.5">
+                          <User size={12} className="text-[#64748b]" />
+                          <span className="font-mono text-xs">{profile.account}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[#cbd5e1] font-mono">--</span>
+                      )}
+                    </td>
+
+                    {/* 备注 */}
+                    <td className="py-3 pr-4 text-[#475569]">
+                      <span className="text-[#cbd5e1] font-mono">--</span>
+                    </td>
+
+                    {/* 分组 */}
+                    <td className="py-3 pr-4">
+                      <span className="rounded border border-[#eaedf1] bg-[#f8fafc] px-2 py-0.5 text-[11px] text-[#64748b]">
+                        {profile.group ? (groupNames.get(profile.group) ?? profile.group) : '未分组'}
+                      </span>
+                    </td>
+
+                    {/* 操作 (Hubstudio Blue Outline Button + ⋮ Menu) */}
+                    <td className="py-3 pr-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          className={`flex items-center gap-1 rounded border px-2.5 py-1 text-xs font-medium transition-colors ${
+                            isRunning
+                              ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                              : 'border-[#1664ff] bg-white text-[#1664ff] hover:bg-[#1664ff]/5'
+                          }`}
+                          disabled={isBusy}
+                          onClick={() => (isRunning ? stop(profile) : launch(profile))}
+                        >
+                          {isRunning ? (
+                            <>
+                              <Square size={11} fill="currentColor" />
+                              <span>关闭</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play size={11} fill="currentColor" />
+                              <span>打开</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Hubstudio More Actions Dropdown ⋮ */}
+                        <div className="relative">
+                          <button
+                            className="flex h-6 w-6 items-center justify-center rounded text-[#94a3b8] hover:bg-[#f1f5f9] hover:text-[#0f172a] transition-colors"
+                            data-menu-trigger={profile.id}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setMenuFor(menuFor === profile.id ? null : profile.id)
+                            }}
+                          >
+                            <MoreVertical size={14} />
+                          </button>
+
+                          {menuFor === profile.id && (
+                            <div
+                              role="menu"
+                              className="absolute right-0 top-7 z-40 w-44 rounded-md border border-[#eaedf1] bg-white py-1 shadow-xl text-left text-xs"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  setDetailModalProfile(profile)
+                                }}
+                              >
+                                <Info size={13} className="text-[#64748b]" />
+                                详情
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  window.open(`http://127.0.0.1:18888/radar?profile_id=${profile.id}`, '_blank')
+                                }}
+                              >
+                                <ShieldCheck size={13} className="text-[#10b981]" />
+                                自检雷达
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  setEditing(profile)
+                                  setFormOpen(true)
+                                }}
+                              >
+                                <Pencil size={13} className="text-[#64748b]" />
+                                编辑环境
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  setAccountModalProfile(profile)
+                                }}
+                              >
+                                <UserCheck size={13} className="text-[#64748b]" />
+                                编辑账号
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  setProxyModalProfile(profile)
+                                }}
+                              >
+                                <Globe size={13} className="text-[#64748b]" />
+                                修改代理
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  setCookieModalProfile(profile)
+                                }}
+                              >
+                                <span className="text-[13px]">🍪</span>
+                                编辑Cookie
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  setRobotModalProfile(profile)
+                                }}
+                              >
+                                <Bot size={13} className="text-[#64748b]" />
+                                CookieRobot
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  setCacheModalProfile(profile)
+                                }}
+                              >
+                                <Eraser size={13} className="text-[#64748b]" />
+                                清除缓存
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  cloneProfile(profile)
+                                }}
+                              >
+                                <Copy size={13} className="text-[#64748b]" />
+                                克隆环境
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  exportArchive(profile)
+                                }}
+                              >
+                                <PackageOpen size={13} className="text-[#64748b]" />
+                                导出环境存档
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={async () => {
+                                  closeMenu(profile.id)
+                                  if (!window.confirm(`确定为环境「${profile.name}」执行指纹基因突变？\n\n将保留已有 Cookie 和登录态，重新随机生成一套全新的 GPU、CPU、内存与硬件特征。`)) return
+                                  try {
+                                    const res = await profilesAPI.mutateFingerprint(profile.id)
+                                    toast('ok', `指纹基因突变成功！已更新硬件: ${res.mutated_diff?.webgl_renderer || '已重铸'}`)
+                                    loadProfiles()
+                                  } catch (err: any) {
+                                    toast('error', '指纹突变失败', err.message)
+                                  }
+                                }}
+                              >
+                                <Dna size={13} className="text-[#8b5cf6]" />
+                                指纹基因突变
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={async () => {
+                                  closeMenu(profile.id)
+                                  try {
+                                    toast('info', `正在备份「${profile.name}」到云端漫游...`)
+                                    const res = await profilesAPI.pushCloudSync(profile.id)
+                                    if (res.success) {
+                                      toast('ok', `云漫游上传成功 (${res.size_kb} KB)`)
+                                    } else {
+                                      toast('error', '云漫游上传失败', (res as any).error)
+                                    }
+                                  } catch (err: any) {
+                                    toast('error', '云漫游上传异常', err.message)
+                                  }
+                                }}
+                              >
+                                <CloudUpload size={13} className="text-[#0284c7]" />
+                                备份至云漫游
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={async () => {
+                                  closeMenu(profile.id)
+                                  if (!window.confirm(`确定从云端恢复环境「${profile.name}」的最新会话数据？`)) return
+                                  try {
+                                    toast('info', `正在从云端漫游拉取「${profile.name}」...`)
+                                    const res = await profilesAPI.pullCloudSync(profile.id)
+                                    if (res.success) {
+                                      toast('ok', `云漫游恢复成功 (${res.size_kb} KB)`)
+                                      loadProfiles()
+                                    } else {
+                                      toast('error', '云漫游拉取失败', (res as any).error)
+                                    }
+                                  } catch (err: any) {
+                                    toast('error', '云漫游拉取异常', err.message)
+                                  }
+                                }}
+                              >
+                                <CloudDownload size={13} className="text-[#0284c7]" />
+                                从云漫游恢复
+                              </button>
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  toggleFavorite(profile)
+                                }}
+                              >
+                                <Star
+                                  size={13}
+                                  className={profile.is_favorite ? 'fill-amber-400 text-amber-500' : 'text-[#64748b]'}
+                                />
+                                {profile.is_favorite ? '取消常用' : '设为常用'}
+                              </button>
+
+                              <div className="my-1 border-t border-[#eaedf1]" />
+
+                              <button
+                                className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#ef4444] hover:bg-rose-50"
+                                onClick={() => {
+                                  closeMenu(profile.id)
+                                  askDelete(profile)
+                                }}
+                              >
+                                <Trash2 size={13} />
+                                删除环境
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ================= 3. Hubstudio Footer Pagination ================= */}
+      <div className="flex items-center justify-between border-t border-[#eaedf1] bg-white px-5 py-2.5 text-xs text-[#64748b]">
+        <div>
+          {selected.size > 0 && (
+            <span className="text-[#1664ff] font-medium">已选择 {selected.size} 项 · </span>
+          )}
+          <span>共 {visible.length} 条记录</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Prev Page */}
+          <button
+            className="flex h-6 w-6 items-center justify-center rounded border border-[#eaedf1] bg-white text-[#64748b] hover:bg-[#f8fafc] disabled:opacity-40"
+            disabled={currentPage === 1}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            <ChevronLeft size={13} />
+          </button>
+
+          {/* Current Page */}
+          <span className="flex h-6 min-w-6 items-center justify-center rounded border border-[#1664ff] bg-white px-2 font-medium text-[#1664ff]">
+            {currentPage}
+          </span>
+
+          {/* Next Page */}
+          <button
+            className="flex h-6 w-6 items-center justify-center rounded border border-[#eaedf1] bg-white text-[#64748b] hover:bg-[#f8fafc] disabled:opacity-40"
+            disabled={currentPage === totalPages}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            <ChevronRight size={13} />
+          </button>
+
+          {/* Per Page Selector */}
+          <select
+            className="h-6 rounded border border-[#eaedf1] bg-white px-1.5 text-xs text-[#64748b] hover:border-[#cbd5e1] focus:outline-none"
+            value={perPage}
+            onChange={(e) => setPerPage(Number(e.target.value))}
+          >
+            <option value={10}>10 条/页</option>
+            <option value={20}>20 条/页</option>
+            <option value={50}>50 条/页</option>
+            <option value={100}>100 条/页</option>
+          </select>
+        </div>
+      </div>
+
+      {/* ================= 4. Commercial Feature Modals ================= */}
       <ProfileForm
         open={formOpen}
         profile={editing}
@@ -921,134 +1262,179 @@ export default function ProfilesPage() {
         onSaved={loadProfiles}
       />
 
+      <CookieModal
+        open={cookieModalProfile !== null}
+        profile={cookieModalProfile}
+        onClose={() => setCookieModalProfile(null)}
+        onSaved={loadProfiles}
+      />
+
+      <AccountModal
+        open={accountModalProfile !== null}
+        profile={accountModalProfile}
+        onClose={() => setAccountModalProfile(null)}
+        onSaved={loadProfiles}
+      />
+
+      <QuickProxyModal
+        open={proxyModalProfile !== null}
+        profile={proxyModalProfile}
+        onClose={() => setProxyModalProfile(null)}
+        onSaved={loadProfiles}
+      />
+
+      <ClearCacheModal
+        open={cacheModalProfile !== null}
+        profile={cacheModalProfile}
+        onClose={() => setCacheModalProfile(null)}
+        onCleared={loadProfiles}
+      />
+
+      <CookieRobotModal
+        open={robotModalProfile !== null}
+        profile={robotModalProfile}
+        onClose={() => setRobotModalProfile(null)}
+      />
+
+      <ProfileDetailModal
+        open={detailModalProfile !== null}
+        profile={detailModalProfile}
+        onClose={() => setDetailModalProfile(null)}
+      />
+
+      <SynchronizerModal
+        open={synchronizerOpen}
+        onClose={() => setSynchronizerOpen(false)}
+      />
+
       <ConfirmDialog
         open={confirm !== null}
         title={confirm?.title ?? ''}
         body={confirm?.body ?? ''}
         confirmLabel={confirm?.label}
-        destructive={confirm?.label === 'Delete'}
+        destructive={confirm?.label?.includes('删除') || confirm?.label?.includes('移入')}
         onConfirm={runConfirmed}
         onCancel={() => setConfirm(null)}
       />
 
       <Modal
         open={exportOpen}
-        title="Export to Excel"
+        title="导出环境至 Excel"
         onClose={() => setExportOpen(false)}
         width={440}
         footer={
           <>
-            <button className="btn btn-default" onClick={() => setExportOpen(false)}>
-              Cancel
+            <button className="btn btn-default text-xs" onClick={() => setExportOpen(false)}>
+              取消
             </button>
-            <button className="btn btn-primary" onClick={exportExcel}>
-              Export
+            <button
+              className="btn btn-primary text-xs"
+              onClick={async () => {
+                setExportOpen(false)
+                try {
+                  const blob = await profilesAPI.exportExcel()
+                  const url = URL.createObjectURL(blob)
+                  const link = document.createElement('a')
+                  link.href = url
+                  link.download = 'camoufox-profiles.xlsx'
+                  document.body.appendChild(link)
+                  link.click()
+                  link.remove()
+                  URL.revokeObjectURL(url)
+                  toast('ok', '已导出 camoufox-profiles.xlsx')
+                } catch (err) {
+                  toast('error', '导出失败', String(err))
+                }
+              }}
+            >
+              导出文件
             </button>
           </>
         }
       >
-        <p className="text-ink-dim">
-          The spreadsheet includes every profile setting so it can be imported back — including
-          <span className="text-ink"> proxy passwords in clear text</span>. Store the file somewhere
-          you would keep the passwords themselves.
+        <p className="text-[#64748b] text-xs leading-relaxed">
+          导出的 Excel 表格将包含所有环境的配置参数以便未来重新导入 — 包括
+          <span className="text-[#0f172a] font-semibold"> 明文代理密码与指纹特征</span>
+          。请务必将导出的文件存放在安全保密的位置。
         </p>
       </Modal>
-    </>
-  )
-}
 
-/** The configured proxy, and under it the last answer it gave.
- *
- * Two lines rather than a column of its own: the table is already wide, and the
- * second line only exists once there is something to say, so a list nobody has
- * checked looks exactly as it did before.
- */
-function ProxyCell({ profile, checking }: { profile: Profile; checking: boolean }) {
-  const configured = formatProxyString(profile.proxy_config) || '—'
-  const check = profile.proxy_check
+      <Modal
+        open={automationModalOpen}
+        title="本地自动化 API 与 CDP 控制"
+        onClose={() => setAutomationModalOpen(false)}
+        width={680}
+        footer={
+          <button className="btn btn-default text-xs cursor-pointer" onClick={() => setAutomationModalOpen(false)}>
+            关闭
+          </button>
+        }
+      >
+        <div className="space-y-4 text-xs">
+          <div className="rounded-lg bg-[#f8fafc] border border-[#e2e8f0] p-3">
+            <h4 className="font-semibold text-[#0f172a] mb-1">活跃 CDP 会话端口</h4>
+            <p className="text-[#64748b] text-[11px] mb-2.5">
+              支持 Playwright / Puppeteer / Selenium 直接通过 CDP WebSocket 远程接管浏览器。
+            </p>
+            {loadingSessions ? (
+              <div className="py-2 text-center text-[#94a3b8]">查询中...</div>
+            ) : activeSessions.length === 0 ? (
+              <div className="rounded border border-dashed border-[#cbd5e1] p-3 text-center text-[#94a3b8]">
+                当前暂无运行中的浏览器会话，启动环境后将在此自动显示 CDP 调试端点
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {activeSessions.map((s) => (
+                  <div key={s.profile_id} className="rounded border border-[#e2e8f0] bg-white p-2.5">
+                    <div className="flex items-center justify-between font-mono font-medium text-[#0f172a]">
+                      <span>环境 ID: {s.profile_id}</span>
+                      <span className="text-[#1664ff]">CDP 端口: {s.cdp_port || '默认'}</span>
+                    </div>
+                    {s.ws_endpoint && (
+                      <div className="mt-1 flex items-center justify-between rounded bg-[#f1f5f9] px-2 py-1 text-[11px] font-mono text-[#334155]">
+                        <span className="truncate mr-2">{s.ws_endpoint}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(s.ws_endpoint)
+                            toast('ok', '已复制 WebSocket 调试 URL')
+                          }}
+                          className="shrink-0 text-[#1664ff] hover:underline cursor-pointer"
+                        >
+                          复制
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-  return (
-    // Bounded, because a table cell grows to fit its content: an unreachable
-    // proxy reports a whole sentence, and without a cap one dead proxy pushed
-    // the row actions off the screen and gave the table a scrollbar.
-    <div className="max-w-[280px] leading-tight">
-      <div className="truncate font-mono text-ink-faint">{configured}</div>
-      {checking ? (
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
-          <span className="signal-pulse h-1.5 w-1.5 rounded-full bg-signal" />
-          Checking…
+          <div>
+            <h4 className="font-semibold text-[#0f172a] mb-1">Playwright (Python) 连接代码示例</h4>
+            <pre className="rounded-lg bg-[#0f172a] p-3 font-mono text-[11px] text-[#e2e8f0] overflow-x-auto">
+{`from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    # 填入上方运行中的 ws_endpoint
+    browser = p.chromium.connect_over_cdp("ws://127.0.0.1:PORT/devtools/browser/xxx")
+    context = browser.contexts[0]
+    page = context.new_page()
+    page.goto("https://ipinfo.io")
+    print(page.title())`}
+            </pre>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-[#0f172a] mb-1">商业本地 REST API 接口</h4>
+            <div className="rounded-lg border border-[#e2e8f0] bg-white p-2.5 text-[11px] space-y-1 font-mono text-[#334155]">
+              <div><span className="text-[#16a34a] font-bold">GET</span> /api/v1/automation/active — 获取所有打开环境的 CDP 接口</div>
+              <div><span className="text-[#2563eb] font-bold">POST</span> /api/v1/automation/start — 启动指定 profile_id 并返回 ws_endpoint</div>
+              <div><span className="text-[#dc2626] font-bold">POST</span> /api/v1/automation/stop — 关闭指定环境</div>
+            </div>
+          </div>
         </div>
-      ) : check ? (
-        <ProxyResult check={check} />
-      ) : null}
+      </Modal>
     </div>
-  )
-}
-
-function ProxyResult({ check }: { check: ProxyCheckRecord }) {
-  const { tone, label, detail } = readProxyCheck(check)
-  const dot = tone === 'ok' ? 'bg-ok' : tone === 'warn' ? 'bg-warn' : 'bg-danger'
-  // Latency and country only mean something when the proxy answered; when it did
-  // not, the reason is the only thing worth the space.
-  const parts = check.reachable
-    ? [check.ip, check.country, check.latency_ms !== null ? `${check.latency_ms} ms` : null]
-    : [check.error]
-
-  return (
-    <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-faint" title={detail}>
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
-      <span className="sr-only">{label}.</span>
-      {/* min-w-0 so this is the part that gives way: a flex item will not shrink
-          below its content without it, and the truncation never happens. */}
-      <span className="min-w-0 truncate font-mono">{parts.filter(Boolean).join(' · ')}</span>
-      <span className="shrink-0 text-ink-dim/70">· {formatLastUsed(check.checked_at)}</span>
-    </div>
-  )
-}
-
-function StatusCell({ status, running }: { status: string; running: boolean }) {
-  if (running) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-signal">
-        <span className="signal-pulse h-1.5 w-1.5 rounded-full bg-signal" />
-        Running
-      </span>
-    )
-  }
-  const tone =
-    status === 'blocked' ? 'bg-danger' : status === 'maintenance' ? 'bg-ink-dim' : 'bg-ink-faint'
-  return (
-    <span className="inline-flex items-center gap-1.5 capitalize text-ink-dim">
-      <span className={`h-1.5 w-1.5 rounded-full ${tone}`} />
-      {status}
-    </span>
-  )
-}
-
-function MenuItem({
-  icon,
-  label,
-  onClick,
-  danger,
-  autoFocus,
-}: {
-  icon: React.ReactNode
-  label: string
-  onClick: () => void
-  danger?: boolean
-  autoFocus?: boolean
-}) {
-  return (
-    <button
-      role="menuitem"
-      autoFocus={autoFocus}
-      onClick={onClick}
-      className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-line focus:bg-line ${
-        danger ? 'text-danger' : 'text-ink'
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   )
 }

@@ -20,6 +20,10 @@ class ProfileCreateRequest(BaseModel):
     )
     proxy_config: dict[str, Any] | None = Field(None, description="Proxy configuration")
     notes: str | None = Field(None, max_length=1000, description="Notes")
+    cookies: str | None = Field(None, description="Cookies in JSON or string format")
+    account: str | None = Field(None, description="Account credentials or username")
+    is_favorite: bool | None = Field(None, description="Mark as favorite")
+    tags: list[str] | None = Field(None, description="Environment tags")
     generate_fingerprint: bool = Field(True, description="Generate a fingerprint")
     fingerprint_preset: str | None = Field(
         None,
@@ -61,6 +65,10 @@ class ProfileUpdateRequest(BaseModel):
     browser_settings: dict[str, Any] | None = Field(None)
     proxy_config: dict[str, Any] | None = Field(None)
     notes: str | None = Field(None, max_length=1000)
+    cookies: str | None = Field(None, description="Cookies in JSON or string format")
+    account: str | None = Field(None, description="Account credentials or username")
+    is_favorite: bool | None = Field(None, description="Mark as favorite")
+    tags: list[str] | None = Field(None, description="Environment tags")
     row_version: int | None = Field(
         None,
         description=(
@@ -165,6 +173,10 @@ class ProfileResponse(BaseModel):
             "checked since the proxy was last changed. Only a check writes it."
         ),
     )
+    cookies: str | None = None
+    account: str | None = None
+    is_favorite: bool = False
+    tags: list[str] = Field(default_factory=list)
     row_version: int = Field(
         0,
         description=(
@@ -195,6 +207,10 @@ class ProfileResponse(BaseModel):
             updated_at=profile.updated_at,
             last_used=profile.last_used,
             deleted_at=profile.deleted_at,
+            cookies=profile.cookies,
+            account=profile.account,
+            is_favorite=profile.is_favorite,
+            tags=profile.tags or [],
             fingerprint=fingerprint_store.summarize(
                 profile.fingerprint,
                 profile.browser_settings.os if profile.browser_settings else None,
@@ -377,6 +393,7 @@ class ProxyLocationResponse(BaseModel):
     timezone: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    languages: list[str] | None = None
 
 
 class ProxyFindingResponse(BaseModel):

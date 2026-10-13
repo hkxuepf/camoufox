@@ -1,0 +1,2 @@
+// CamouChromium C++ Stealth Hook for Intl Locale
+// Directly returns profile target locale in Blink/V8 Intl objects

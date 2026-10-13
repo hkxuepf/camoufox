@@ -4,9 +4,9 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -20,7 +20,23 @@ from camoufox_pm.api.dependencies import (
 from camoufox_pm.api.errors import install_error_handlers
 from camoufox_pm.api.middleware.logging import LoggingMiddleware
 from camoufox_pm.api.models.system import ErrorResponse, HealthResponse
-from camoufox_pm.api.routes import auth, groups, profiles, recovery, runtime, schedules, system
+from camoufox_pm.api.routes import (
+    admin,
+    auth,
+    automation,
+    billing,
+    extensions,
+    groups,
+    hubstudio_compat,
+    profiles,
+    proxies,
+    radar,
+    recovery,
+    runtime,
+    schedules,
+    system,
+    window_manager,
+)
 from camoufox_pm.config import get_settings
 from camoufox_pm.core.backups import ProfileBackupManager
 from camoufox_pm.core.database import StorageManager
@@ -87,6 +103,11 @@ async def lifespan(app: FastAPI):
                 except Exception as exc:
                     logger.warning(f"Failed to close browsers on shutdown: {exc}")
                 await profile_manager.release_all_leases()
+                try:
+                    from camoufox_pm.core.browser_session import cleanup_all_browsers_sync
+                    cleanup_all_browsers_sync(settings.db_path)
+                except Exception:
+                    pass
         finally:
             recovery.set_backup_manager(None)
             await storage_manager.close()
@@ -163,6 +184,46 @@ for _prefix, _in_schema in (("/api/v1", True), ("/api", False)):
         dependencies=protected,
         include_in_schema=_in_schema,
     )
+    app.include_router(
+        admin.router,
+        prefix=_prefix,
+        tags=["Admin"],
+        dependencies=protected,
+        include_in_schema=_in_schema,
+    )
+    app.include_router(
+        billing.router,
+        prefix=_prefix,
+        tags=["Billing"],
+        include_in_schema=_in_schema,
+    )
+    app.include_router(
+        proxies.router,
+        prefix=_prefix,
+        tags=["Proxies"],
+        dependencies=protected,
+        include_in_schema=_in_schema,
+    )
+    app.include_router(
+        extensions.router,
+        prefix=_prefix,
+        tags=["Extensions"],
+        dependencies=protected,
+        include_in_schema=_in_schema,
+    )
+    app.include_router(
+        window_manager.router,
+        prefix=_prefix,
+        tags=["WindowManager"],
+        dependencies=protected,
+        include_in_schema=_in_schema,
+    )
+    app.include_router(
+        automation.router,
+        prefix=_prefix,
+        tags=["Automation"],
+        include_in_schema=_in_schema,
+    )
     for _router in (recovery.router, runtime.router):
         app.include_router(
             _router,
@@ -171,6 +232,46 @@ for _prefix, _in_schema in (("/api/v1", True), ("/api", False)):
             dependencies=protected,
             include_in_schema=_in_schema,
         )
+
+# Unprotected Radar Dashboard for browser start check
+@app.get("/radar", response_class=HTMLResponse, include_in_schema=False)
+async def root_radar(profile_id: str = ""):
+    from camoufox_pm.api.routes.radar import get_radar_dashboard
+    return await get_radar_dashboard(profile_id=profile_id)
+
+
+@app.get("/radar.js", include_in_schema=False)
+async def root_radar_js(timezone: str = "Asia/Shanghai"):
+    from fastapi.responses import Response
+    from camoufox_pm.api.routes.radar import generate_radar_js_str
+    return Response(content=generate_radar_js_str(timezone=timezone), media_type="application/javascript")
+
+
+app.include_router(radar.router, prefix="/api/v1")
+app.include_router(hubstudio_compat.router)
+
+
+@app.post("/api/v1/system/close-all-browsers", include_in_schema=False)
+@app.post("/api/v1/browsers/close-all-sync", include_in_schema=False)
+async def system_close_all_browsers(request: Request):
+    """Local shutdown hook to cleanly terminate all browser processes."""
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in ("127.0.0.1", "localhost", "::1"):
+        raise HTTPException(status_code=403, detail="Localhost only")
+    from camoufox_pm.api.dependencies import get_profile_manager
+    from camoufox_pm.core.browser_session import cleanup_all_browsers_sync
+    try:
+        pm = get_profile_manager()
+        await pm.browser_sessions.close_all()
+        await pm.release_all_leases()
+    except Exception as exc:
+        logger.warning(f"Error closing browser sessions: {exc}")
+    try:
+        cleanup_all_browsers_sync(settings.db_path)
+    except Exception as exc:
+        logger.warning(f"Error cleaning up browser processes: {exc}")
+    return {"status": "ok"}
+
 
 
 @app.get(

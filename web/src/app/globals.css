@@ -12,26 +12,24 @@
  */
 
 @theme {
-  --color-canvas: #0b0c0e;
-  --color-surface: #121316;
-  --color-raised: #191a1f;
-  --color-line: #232529;
-  --color-line-strong: #313540;
+  --color-canvas: #f4f6fa;
+  --color-surface: #ffffff;
+  --color-raised: #f8fafc;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
 
-  --color-ink: #e8e9eb;
-  --color-ink-dim: #9195a0;
-  --color-ink-faint: #6a6e78;
+  --color-ink: #0f172a;
+  --color-ink-dim: #475569;
+  --color-ink-faint: #94a3b8;
 
-  --color-signal: #ff6b35;
-  --color-signal-soft: #ff8a5c;
-  --color-signal-shade: #3a1c10;
+  --color-signal: #1664ff;
+  --color-signal-soft: #3882ff;
+  --color-signal-shade: #e8f3ff;
 
-  --color-danger: #f2555a;
-  --color-danger-shade: #3a1418;
-  /* Detectable-but-not-fatal. Distinct from --color-signal, which means "this is
-     the primary action" or "this profile is running" and nothing else. */
-  --color-warn: #d8a13a;
-  --color-ok: #3fb950;
+  --color-danger: #ef4444;
+  --color-danger-shade: #fee2e2;
+  --color-warn: #f59e0b;
+  --color-ok: #10b981;
 
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, monospace;
@@ -118,14 +116,15 @@
 
   .field {
     width: 100%;
-    background: var(--color-canvas);
+    background: #ffffff;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-md);
     padding: 7px 10px;
     color: var(--color-ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
     transition:
       border-color 0.12s ease,
-      background 0.12s ease;
+      box-shadow 0.12s ease;
   }
 
   .field:hover:not(:disabled) {
@@ -135,7 +134,8 @@
   .field:focus {
     outline: none;
     border-color: var(--color-signal);
-    background: var(--color-surface);
+    background: #ffffff;
+    box-shadow: 0 0 0 2px rgba(22, 100, 255, 0.15);
   }
 
   .field:disabled {
@@ -145,7 +145,7 @@
   select.field {
     appearance: none;
     /* Chevron drawn inline so no network request is needed. */
-    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239195a0' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 9px center;
     padding-right: 28px;
@@ -179,7 +179,8 @@
     transition:
       background 0.12s ease,
       border-color 0.12s ease,
-      color 0.12s ease;
+      color 0.12s ease,
+      box-shadow 0.12s ease;
   }
 
   .btn:disabled {
@@ -190,8 +191,9 @@
   /* The only saturated element on the page. */
   .btn-primary {
     background: var(--color-signal);
-    color: #1a0d06;
-    font-weight: 600;
+    color: #ffffff;
+    font-weight: 500;
+    box-shadow: 0 1px 2px rgba(22, 100, 255, 0.2);
   }
 
   .btn-primary:hover:not(:disabled) {
@@ -199,13 +201,14 @@
   }
 
   .btn-default {
-    background: var(--color-raised);
+    background: #ffffff;
     border-color: var(--color-line);
     color: var(--color-ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   }
 
   .btn-default:hover:not(:disabled) {
-    background: var(--color-line);
+    background: var(--color-raised);
     border-color: var(--color-line-strong);
   }
 

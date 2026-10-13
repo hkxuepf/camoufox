@@ -84,14 +84,47 @@ async def require_auth(request: Request, x_api_key: str | None = Header(default=
     """
     if _api_key_matches(x_api_key):
         return
+    settings = get_settings()
     storage = get_storage_manager()
     if await storage.count_users() == 0:
-        if not get_settings().api_key:
+        if not settings.api_key:
             return
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    token = request.cookies.get(auth.SESSION_COOKIE)
+    token = auth.extract_session_token(request)
     if token and await auth.validate_session(storage, token) is not None:
         return
     raise HTTPException(
         status_code=401, detail="Authentication required: log in or send a valid API key"
     )
+
+
+async def get_current_user(
+    request: Request, x_api_key: str | None = Header(default=None)
+) -> dict | None:
+    """Return user record if authenticated, or None if not authenticated."""
+    if _api_key_matches(x_api_key):
+        return {"id": "system", "username": "system", "role": "admin"}
+    settings = get_settings()
+    storage = get_storage_manager()
+    if await storage.count_users() == 0:
+        return {"id": "local", "username": "local", "role": "admin"}
+    token = auth.extract_session_token(request)
+    if token:
+        username = await auth.validate_session(storage, token)
+        if username:
+            user = await storage.get_user_by_username(username)
+            if user:
+                return user
+    return None
+
+
+async def require_admin(
+    request: Request, x_api_key: str | None = Header(default=None)
+) -> dict:
+    """Enforce that the caller has admin privileges."""
+    user = await get_current_user(request, x_api_key)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin permission required")
+    return user

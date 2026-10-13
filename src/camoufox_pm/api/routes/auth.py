@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from loguru import logger
 
 from camoufox_pm.api.dependencies import get_storage_manager
-from camoufox_pm.api.models.auth import AuthSessionResponse, LoginRequest
+from camoufox_pm.api.models.auth import AuthSessionResponse, LoginRequest, RegisterRequest
 from camoufox_pm.api.models.system import ApiResponse
 from camoufox_pm.config import get_settings
 from camoufox_pm.core import auth
@@ -44,6 +44,68 @@ async def _reject_login(password: str, burn_hash: bool) -> NoReturn:
     raise HTTPException(status_code=401, detail="Invalid username or password")
 
 
+import json
+import secrets
+import urllib.error
+import urllib.request
+
+@router.post(
+    "/auth/register",
+    response_model=AuthSessionResponse,
+    operation_id="register",
+    summary="Register a new user account.",
+    description="Create a new user account and open a session.",
+)
+async def register(body: RegisterRequest, request: Request, response: Response) -> AuthSessionResponse:
+    """Register a new user and log in immediately."""
+    storage = get_storage_manager()
+    username = body.username.strip()
+
+    if len(username) < 2:
+        raise HTTPException(status_code=400, detail="用户名长度至少为 2 个字符")
+    if len(body.password) < 6:
+        raise HTTPException(status_code=400, detail="密码长度至少为 6 个字符")
+
+    existing = await storage.get_user_by_username(username)
+    if existing:
+        raise HTTPException(status_code=400, detail="该用户名已被注册")
+
+    user_id = secrets.token_hex(8)
+    pwd_hash = auth.hash_password(body.password)
+    await storage.create_user(
+        user_id=user_id,
+        username=username,
+        password_hash=pwd_hash,
+        role="user",
+        plan_id="free",
+        max_profiles=10,
+        max_concurrent=2,
+    )
+    user = await storage.get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=500, detail="注册失败，请稍后重试")
+
+    await storage.delete_expired_sessions()
+    token = await auth.create_session(storage, user["id"])
+    _set_session_cookie(request, response, token)
+    logger.info(f"User {user['username']} registered and logged in")
+
+    used_profiles = await storage.count_profiles({"user_id": user["id"]})
+    return AuthSessionResponse(
+        user_auth_enabled=True,
+        authenticated=True,
+        token=token,
+        username=user["username"],
+        role=user.get("role", "user"),
+        plan_id=user.get("plan_id", "free"),
+        max_profiles=user.get("max_profiles", 10),
+        used_profiles=used_profiles,
+        max_concurrent=user.get("max_concurrent", 2),
+        expires_at=user.get("expires_at"),
+        status=user.get("status", "active"),
+    )
+
+
 @router.post(
     "/auth/login",
     response_model=AuthSessionResponse,
@@ -57,22 +119,94 @@ async def _reject_login(password: str, burn_hash: bool) -> NoReturn:
 async def login(body: LoginRequest, request: Request, response: Response) -> AuthSessionResponse:
     """Verify credentials and open a session."""
     storage = get_storage_manager()
-    user = await storage.get_user_by_username(body.username)
-    if user is None:
-        await _reject_login(body.password, burn_hash=True)
-    if not auth.verify_password(user["password_hash"], body.password):
-        await _reject_login(body.password, burn_hash=False)
-    if auth.password_needs_rehash(user["password_hash"]):
-        # Transparent upgrade to current argon2 parameters while we hold the
-        # plaintext; the old hash keeps working if this write is never reached.
-        await storage.update_user_password(user["username"], auth.hash_password(body.password))
+    settings = get_settings()
+
+    # 1. Attempt cloud authentication against cloud server
+    cloud_user = None
+    if settings.cloud_server and settings.cloud_server.strip():
+        cloud_url = settings.cloud_server.rstrip("/")
+        try:
+            def _do_cloud_req():
+                req = urllib.request.Request(
+                    f"{cloud_url}/api/v1/auth/login",
+                    data=json.dumps({"username": body.username, "password": body.password}).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                        "Connection": "close",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    if resp.status == 200:
+                        return json.loads(resp.read().decode())
+                return None
+
+            cloud_user = await asyncio.to_thread(_do_cloud_req)
+        except urllib.error.HTTPError as e:
+            logger.warning(f"Cloud login verification HTTP error: {e.code} {e.reason}")
+        except Exception as e:
+            logger.warning(f"Cloud login verification exception: {e}")
+
+    # 2. Sync cloud user data locally if cloud login succeeded
+    if cloud_user and cloud_user.get("authenticated"):
+        user = await storage.get_user_by_username(body.username)
+        pwd_hash = auth.hash_password(body.password)
+        if not user:
+            user_id = secrets.token_hex(8)
+            await storage.create_user(
+                user_id=user_id,
+                username=body.username,
+                password_hash=pwd_hash,
+                role=cloud_user.get("role", "user"),
+                plan_id=cloud_user.get("plan_id", "free"),
+                max_profiles=cloud_user.get("max_profiles", 10),
+                max_concurrent=cloud_user.get("max_concurrent", 2),
+                expires_at=cloud_user.get("expires_at"),
+            )
+            user = await storage.get_user_by_username(body.username)
+        else:
+            await storage.update_user_password(body.username, pwd_hash)
+            await storage.update_user_admin(
+                username=body.username,
+                role=cloud_user.get("role", "user"),
+                plan_id=cloud_user.get("plan_id", "free"),
+                max_profiles=cloud_user.get("max_profiles", 10),
+                max_concurrent=cloud_user.get("max_concurrent", 2),
+                expires_at=cloud_user.get("expires_at"),
+                status=cloud_user.get("status", "active"),
+            )
+            user = await storage.get_user_by_username(body.username)
+    else:
+        # Fall back to local database authentication
+        user = await storage.get_user_by_username(body.username)
+        if user is None:
+            await _reject_login(body.password, burn_hash=True)
+        if not auth.verify_password(user["password_hash"], body.password):
+            await _reject_login(body.password, burn_hash=False)
+        if auth.password_needs_rehash(user["password_hash"]):
+            await storage.update_user_password(user["username"], auth.hash_password(body.password))
 
     await storage.delete_expired_sessions()
     token = await auth.create_session(storage, user["id"])
     _set_session_cookie(request, response, token)
-    logger.info(f"User {user['username']} logged in")
+    logger.info(f"User {user['username']} logged in (role={user.get('role', 'user')})")
+    
+    is_admin = user.get("role") == "admin"
+    used_profiles = await storage.count_profiles(None if is_admin else {"user_id": user["id"]})
+
     return AuthSessionResponse(
-        user_auth_enabled=True, authenticated=True, username=user["username"]
+        user_auth_enabled=True,
+        authenticated=True,
+        token=token,
+        username=user["username"],
+        role=user.get("role", "user"),
+        plan_id=user.get("plan_id", "free"),
+        max_profiles=user.get("max_profiles", 10),
+        used_profiles=used_profiles,
+        max_concurrent=user.get("max_concurrent", 2),
+        expires_at=user.get("expires_at"),
+        status=user.get("status", "active"),
     )
 
 
@@ -88,11 +222,39 @@ async def login(body: LoginRequest, request: Request, response: Response) -> Aut
 )
 async def logout(request: Request, response: Response) -> ApiResponse[None]:
     """Invalidate the caller's session, if any."""
-    token = request.cookies.get(auth.SESSION_COOKIE)
+    token = auth.extract_session_token(request)
     if token:
         await get_storage_manager().delete_session(auth.hash_token(token))
     response.delete_cookie(auth.SESSION_COOKIE, path="/")
     return ApiResponse(success=True, message="Logged out", data=None)
+
+
+@router.get(
+    "/auth/user-profile",
+    response_model=AuthSessionResponse,
+    summary="Get user plan and profile quota for client sync",
+)
+async def get_user_profile(username: str) -> AuthSessionResponse:
+    storage = get_storage_manager()
+    user = await storage.get_user_by_username(username.strip())
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    is_admin = user.get("role") == "admin"
+    used_profiles = await storage.count_profiles(None if is_admin else {"user_id": user["id"]})
+    return AuthSessionResponse(
+        user_auth_enabled=True,
+        authenticated=True,
+        token="",
+        username=user["username"],
+        role=user.get("role", "user"),
+        plan_id=user.get("plan_id", "free"),
+        max_profiles=user.get("max_profiles", 10),
+        used_profiles=used_profiles,
+        max_concurrent=user.get("max_concurrent", 2),
+        expires_at=user.get("expires_at"),
+        status=user.get("status", "active"),
+    )
 
 
 @router.get(
@@ -105,16 +267,72 @@ async def logout(request: Request, response: Response) -> ApiResponse[None]:
         "carries a valid session. Reachable without authentication."
     ),
 )
-async def get_auth_session(request: Request) -> AuthSessionResponse:
+async def get_auth_session(request: Request, response: Response) -> AuthSessionResponse:
     """Report whether login is required and whether the caller is logged in."""
     storage = get_storage_manager()
-    user_auth_enabled = await storage.count_users() > 0
-    username = None
-    token = request.cookies.get(auth.SESSION_COOKIE)
+    settings = get_settings()
+
+    token = auth.extract_session_token(request)
     if token:
         username = await auth.validate_session(storage, token)
+        if username:
+            user = await storage.get_user_by_username(username)
+            if user:
+                # If connected to cloud server, sync latest user plan & quota
+                if settings.cloud_server and settings.cloud_server.strip():
+                    cloud_url = settings.cloud_server.rstrip("/")
+                    try:
+                        def _fetch_cloud_user():
+                            req = urllib.request.Request(
+                                f"{cloud_url}/api/v1/auth/user-profile?username={username}",
+                                headers={
+                                    "User-Agent": "CamouHub-Desktop",
+                                    "Connection": "close",
+                                },
+                            )
+                            with urllib.request.urlopen(req, timeout=3.5) as resp:
+                                if resp.status == 200:
+                                    return json.loads(resp.read().decode())
+                            return None
+
+                        cloud_data = await asyncio.to_thread(_fetch_cloud_user)
+                        if cloud_data and cloud_data.get("authenticated"):
+                            await storage.update_user_admin(
+                                username=username,
+                                role=cloud_data.get("role", user.get("role", "user")),
+                                plan_id=cloud_data.get("plan_id", user.get("plan_id", "free")),
+                                max_profiles=cloud_data.get("max_profiles", user.get("max_profiles", 10)),
+                                max_concurrent=cloud_data.get("max_concurrent", user.get("max_concurrent", 2)),
+                                expires_at=cloud_data.get("expires_at", user.get("expires_at")),
+                                status=cloud_data.get("status", user.get("status", "active")),
+                            )
+                            user = await storage.get_user_by_username(username)
+                    except Exception as exc:
+                        logger.debug(f"Cloud user profile sync skipped: {exc}")
+
+                # Ensure the cookie is refreshed in the browser
+                _set_session_cookie(request, response, token)
+                is_admin = user.get("role") == "admin"
+                used_profiles = await storage.count_profiles(None if is_admin else {"user_id": user["id"]})
+                return AuthSessionResponse(
+                    user_auth_enabled=True,
+                    authenticated=True,
+                    token=token,
+                    username=username,
+                    role=user.get("role", "user"),
+                    plan_id=user.get("plan_id", "free"),
+                    max_profiles=user.get("max_profiles", 10),
+                    used_profiles=used_profiles,
+                    max_concurrent=user.get("max_concurrent", 2),
+                    expires_at=user.get("expires_at"),
+                    status=user.get("status", "active"),
+                )
+
+    # In cloud-connected mode, always require authentication
     return AuthSessionResponse(
-        user_auth_enabled=user_auth_enabled,
-        authenticated=username is not None,
-        username=username,
+        user_auth_enabled=True,
+        authenticated=False,
+        username=None,
     )
+
+

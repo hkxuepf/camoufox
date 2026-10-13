@@ -1,11 +1,16 @@
 """Data models for the Camoufox profile management system."""
 
+import json
 import re
 import secrets
 import string
+import sys
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal
+
+from loguru import logger
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -100,18 +105,20 @@ class BrowserSettings(BaseModel):
 
     # Browser chrome only; fingerprint and privacy settings remain independent.
     browser_ui: Literal["desktop", "camoufox"] = "desktop"
+    browser_engine: Literal["chromium", "camoufox"] = "camoufox"
 
     # Base settings
-    os: str = "windows"  # windows, linux, macos
+    os: str = "macos" if sys.platform == "darwin" else "windows"  # windows, linux, macos
     screen: str = "1920x1080"
     user_agent: str | None = None
     languages: list[str] = ["en-US", "en"]
     timezone: str | None = None
     locale: str | None = None
 
-    # Browser window size
+    # Browser window & display
     window_width: int | None = 1280
     window_height: int | None = 720
+    device_pixel_ratio: float = 1.0
 
     # Geolocation
     geolocation: dict[str, float] | None = None
@@ -131,11 +138,40 @@ class BrowserSettings(BaseModel):
     canvas_noise: bool = True
     webgl_noise: bool = True
     audio_noise: bool = True
+    client_rects_noise: bool = True
+    battery_spoofing: bool = True
+    do_not_track: bool = False
+
+    # WebGL vendor & renderer spoofing
+    webgl_vendor: str | None = None
+    webgl_renderer: str | None = None
+
+    # Secure DNS (DoH)
+    doh_provider: str | None = None
+
+    # Default Search Engine (google, bing, baidu, duckduckgo)
+    search_engine: str = "google"
+
+    # Automation / Remote Debugging Port (CDP)
+    remote_debugging_port: int | None = None
+
+    # Custom CLI arguments
+    custom_args: list[str] = Field(default_factory=list)
 
     # Make the canvas reproducible across launches instead of randomised per
     # session. Off by default: it trades cross-site unlinkability for a canvas
     # that behaves like real hardware. See to_camoufox_launch_options().
     stable_canvas: bool = False
+
+    # Advanced stealth: OS-specific Font Masking & Isolation
+    font_masking: bool = True
+
+    # Virtual Isolated Clipboard Sandbox (Anti-Snoop)
+    clipboard_isolation: bool = True
+
+    # Custom startup URL & Health Radar Start Page
+    startup_url: str | None = None
+    open_health_radar: bool = True
 
     # Fonts
     fonts: list[str] | None = None
@@ -185,6 +221,25 @@ class BrowserSettings(BaseModel):
         # sends with a literal address. Leaving it alone keeps the real behaviour.
         if self.webrtc_public_ip:
             config["webrtc:ipv4"] = self.webrtc_public_ip
+
+        # Ensure screen resolution is realistic and aligned with chosen OS
+        sw, sh = (1512, 982) if self.os == "macos" else (1920, 1080)
+        if getattr(self, "screen", None) and "x" in self.screen:
+            try:
+                sw, sh = (int(p) for p in self.screen.split("x"))
+            except Exception:
+                pass
+        elif self.window_width and self.window_height:
+            sw, sh = self.window_width, self.window_height
+
+        config["screen.width"] = sw
+        config["screen.height"] = sh
+        config["screen.availWidth"] = sw
+        avail_h = max(sh - 38, 600) if self.os == "macos" else max(sh - 40, 600)
+        config["screen.availHeight"] = avail_h
+        color_depth = 30 if self.os == "macos" and sw == 1512 else 24
+        config["screen.colorDepth"] = color_depth
+        config["screen.pixelDepth"] = color_depth
         return config
 
 
@@ -228,6 +283,7 @@ class Profile(BaseModel):
 
     id: str = Field(default_factory=generate_profile_id)
     name: str
+    user_id: str | None = None
     group: str | None = None
     status: ProfileStatus = ProfileStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)
@@ -240,6 +296,10 @@ class Profile(BaseModel):
     extensions: list[str] = Field(default_factory=list)
     storage_path: str | None = None
     notes: str | None = None
+    cookies: str | None = None
+    account: str | None = None
+    is_favorite: bool = False
+    tags: list[str] = Field(default_factory=list)
 
     # The machine this profile pretends to be, resolved once on first launch and
     # replayed from then on so the profile does not look like new hardware every
@@ -271,9 +331,27 @@ class Profile(BaseModel):
         does not inject a manual user-agent or WebGL renderer.
         """
         bs = self.browser_settings
+        bs_dict = bs.model_dump()
+        if self.proxy_check:
+            if not bs_dict.get("timezone") and self.proxy_check.timezone:
+                bs_dict["timezone"] = self.proxy_check.timezone
+            if self.proxy_check.country:
+                from .geo_utils import get_languages_for_country
+                country_langs = get_languages_for_country(self.proxy_check.country)
+                cur_langs = bs_dict.get("languages") or []
+                if not cur_langs or cur_langs == ["en-US", "en"] or cur_langs == ["zh-CN", "zh"]:
+                    bs_dict["languages"] = country_langs
+
+        target_os = bs.os
+        if sys.platform == "darwin" and target_os == "windows":
+            # On macOS host, setting Windows platform causes Cocoa UI font/character codepage corruption.
+            # Using macos preserves pristine native Cocoa fonts and prevents corrupted URL bar typing.
+            target_os = "macos"
+
+        effective_langs = bs_dict.get("languages") or bs.languages or ["en-US"]
         options: dict[str, Any] = {
-            "os": bs.os,
-            "locale": ",".join(bs.languages) if bs.languages else "en-US",
+            "os": target_os,
+            "locale": ",".join(effective_langs) if effective_langs else "en-US",
             "config": bs.to_camoufox_config(),
             "user_data_dir": self.get_storage_path(),
             "persistent_context": True,
@@ -286,26 +364,345 @@ class Profile(BaseModel):
         # (which reports the proxy's public IP when a proxy is set).
         if bs.webrtc_mode == WebRTCMode.NONE:
             options["block_webrtc"] = True
+
+        # Allow extensions to control new tab / tabs
+        config = options.setdefault("config", {})
+        config["allowAddonNewtab"] = True
+
+        ff_prefs = options.setdefault("firefox_user_prefs", {})
+        ff_prefs.setdefault("browser.startup.page", 1)
+        startup_target = getattr(bs, "startup_url", None)
+        if startup_target:
+            ff_prefs["browser.startup.homepage"] = startup_target
+        else:
+            ff_prefs.setdefault("browser.startup.homepage", "about:newtab")
+        ff_prefs.setdefault("browser.sessionstore.resume_from_crash", False)
+        ff_prefs.setdefault("browser.sessionstore.max_resumed_crashes", 0)
+        ff_prefs.setdefault("browser.urlbar.suggest.searches", True)
+
+        # 1. Native Firefox Radar WebExtension Integration (Matching Hubstudio NewTab Override)
+        open_radar = getattr(bs, "open_health_radar", True)
+        if open_radar:
+            try:
+                from camoufox_pm.api.routes.radar import generate_radar_html_str, generate_radar_js_str
+                profile_dir = Path(self.storage_path or self.get_storage_path())
+                addon_dir = profile_dir / "cpm_radar_extension"
+                addon_dir.mkdir(parents=True, exist_ok=True)
+
+                manifest_data = {
+                    "manifest_version": 2,
+                    "name": "Camoufox Environment Radar",
+                    "version": "1.0.0",
+                    "description": "Native integrated health radar tab",
+                    "chrome_url_overrides": {
+                        "newtab": "radar.html"
+                    },
+                    "background": {
+                        "scripts": ["background.js"]
+                    },
+                    "permissions": [
+                        "tabs"
+                    ],
+                    "browser_specific_settings": {
+                        "gecko": {
+                            "id": f"radar-{self.id}@camoufox.local"
+                        }
+                    }
+                }
+                (addon_dir / "manifest.json").write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+
+                bg_js = """const radarUrl = browser.runtime.getURL("radar.html");
+
+async function initStartupTab() {
+  try {
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs && tabs.length > 0) {
+      const tab = tabs[0];
+      if (!tab.url || tab.url === "about:blank" || tab.url.includes("about:newtab") || tab.url.includes("about:home")) {
+        await browser.tabs.update(tab.id, { url: radarUrl });
+      }
+    }
+  } catch (e) {
+    console.error("Init startup tab error:", e);
+  }
+}
+
+initStartupTab();
+
+browser.tabs.onCreated.addListener((tab) => {
+  // If tab was opened from an existing page (link click, window.open, etc), NEVER intercept!
+  if (tab.openerTabId) {
+    return;
+  }
+  // If tab has a destination URL assigned or pending, NEVER intercept!
+  if (tab.pendingUrl && !tab.pendingUrl.startsWith("about:")) {
+    return;
+  }
+  if (tab.url && !tab.url.startsWith("about:")) {
+    return;
+  }
+  // Only override pure new-tab pages without openers
+  if (tab.url === "about:newtab" || tab.url === "about:home") {
+    browser.tabs.update(tab.id, { url: radarUrl });
+  }
+});
+"""
+                (addon_dir / "background.js").write_text(bg_js, encoding="utf-8")
+
+                langs = bs_dict.get("languages") or bs.languages or ["zh-CN"]
+                l_str = ", ".join(langs) if isinstance(langs, list) and langs else str(langs or "zh-CN")
+                tz = bs_dict.get("timezone") or bs.timezone or "Asia/Shanghai"
+                raw_os = (getattr(bs, "os", None) or "windows").lower()
+                os_map = {
+                    "macos": "macOS",
+                    "windows": "Windows",
+                    "linux": "Linux",
+                    "android": "Android",
+                    "ios": "iOS",
+                }
+                os_display = os_map.get(raw_os, raw_os.capitalize())
+                arch_map = {
+                    "macos": "ARM64 / Apple Silicon",
+                    "windows": "x86_64 架构",
+                    "linux": "x86_64 架构",
+                    "android": "ARM64 移动架构",
+                    "ios": "Apple A-Series 移动架构",
+                }
+                arch_display = arch_map.get(raw_os, "x86_64 架构")
+                cores = bs.hardware_concurrency or 8
+                mem = bs.device_memory or 8
+                w = bs.window_width or 1280
+                h = bs.window_height or 720
+                proxy_cfg = self.proxy
+                p_type_str = str(proxy_cfg.type.value if hasattr(proxy_cfg.type, "value") else proxy_cfg.type).upper() if proxy_cfg else ""
+                proxy_display = f"{p_type_str} {proxy_cfg.server}" if proxy_cfg and proxy_cfg.server else "直连模式 (Direct)"
+
+                ua_str = getattr(bs, "user_agent", None) or ""
+                if not ua_str:
+                    if raw_os == "macos":
+                        ua_str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0"
+                    elif raw_os == "android":
+                        ua_str = "Mozilla/5.0 (Android 14; Mobile; rv:135.0) Gecko/135.0 Firefox/135.0"
+                    elif raw_os == "ios":
+                        ua_str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/135.0 Mobile/15E148 Safari/605.1.15"
+                    elif raw_os == "linux":
+                        ua_str = "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0"
+                    else:
+                        ua_str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0"
+
+                radar_html = generate_radar_html_str(
+                    env_name=self.name or self.id,
+                    group_name=getattr(self, "group", None) or "未分组",
+                    notes=self.notes or "--",
+                    account=self.account or "",
+                    lang_str=l_str,
+                    timezone=tz,
+                    ua_str=ua_str,
+                    os_name=os_display,
+                    arch_str=arch_display,
+                    cpu_cores=cores,
+                    memory_gb=mem,
+                    screen_res=f"{w} × {h}",
+                    webgl_vendor=bs.webgl_vendor or "Google Inc. (ANGLE)",
+                    webgl_renderer=bs.webgl_renderer or "ANGLE (Direct3D11)",
+                    engine_name="Camoufox 135",
+                    proxy_info=proxy_display,
+                    init_ip="探查中...",
+                )
+                radar_js = generate_radar_js_str(timezone=tz, expected_languages=langs)
+                (addon_dir / "radar.html").write_text(radar_html, encoding="utf-8")
+                (addon_dir / "radar.js").write_text(radar_js, encoding="utf-8")
+
+                # Pre-confirm extension newTabNotification in extension-settings.json to prevent doorhanger prompt
+                try:
+                    ext_id = f"radar-{self.id}@camoufox.local"
+                    settings_file = profile_dir / "extension-settings.json"
+                    s_data = json.loads(settings_file.read_text(encoding="utf-8")) if settings_file.exists() else {}
+                    s_data.setdefault("version", 3)
+                    s_data.setdefault("commands", {})
+                    s_data.setdefault("prefs", {})
+                    s_data.setdefault("url_overrides", {})
+                    s_data.setdefault("default_search", {})
+                    s_data.setdefault("homepageNotification", {})
+                    s_data.setdefault("tabHideNotification", {})
+                    new_tab_notif = s_data.setdefault("newTabNotification", {})
+                    new_tab_notif[ext_id] = {
+                        "initialValue": None,
+                        "precedenceList": [
+                            {
+                                "id": ext_id,
+                                "installDate": 1791871149000,
+                                "value": True,
+                                "enabled": True,
+                            }
+                        ],
+                    }
+                    settings_file.write_text(json.dumps(s_data, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+
+                addons_list = options.setdefault("addons", [])
+                if str(addon_dir) not in addons_list:
+                    addons_list.append(str(addon_dir))
+            except Exception as exc:
+                logger.warning(f"Failed to generate radar extension for Camoufox: {exc}")
+
+        # 2. Clean Toolbars without annoying spring spaces and disable taskbarTabs
+        customization_state = {
+            "placements": {
+                "widget-overflow-fixed-list": [],
+                "unified-extensions-area": [],
+                "nav-bar": [
+                    "back-button",
+                    "forward-button",
+                    "stop-reload-button",
+                    "urlbar-container",
+                    "downloads-button",
+                    "unified-extensions-button",
+                    "ublock0_raymondhill_net-browser-action",
+                ],
+                "TabsToolbar": [
+                    "tabbrowser-tabs",
+                    "new-tab-button",
+                ],
+                "vertical-tabs": [],
+                "PersonalToolbar": ["personal-bookmarks"],
+            },
+            "seen": ["developer-button"],
+            "dirtyAreaCache": ["nav-bar", "TabsToolbar", "PersonalToolbar"],
+            "currentVersion": 26,
+            "newElementCount": 0,
+        }
+        ff_prefs["browser.uiCustomization.state"] = json.dumps(customization_state)
+        ff_prefs["browser.tabs.closeTabByDblclick"] = False
+        ff_prefs["browser.newtabpage.enabled"] = True
+        ff_prefs["browser.tabs.loadInBackground"] = True
+        ff_prefs["browser.taskbarTabs.enabled"] = False
+        ff_prefs["toolkit.legacyUserProfileCustomizations.stylesheets"] = True
+
+        # 3. Inject userChrome.css to place + next to tabs, remove taskbar-tabs, and suppress alerts
+        try:
+            profile_dir = Path(self.storage_path or self.get_storage_path())
+            chrome_dir = profile_dir / "chrome"
+            chrome_dir.mkdir(parents=True, exist_ok=True)
+            user_chrome_css = """/* Camoufox Clean Native UI Styles */
+toolbarspring,
+.titlebar-spacer,
+[id^="customizableui-special-spring"],
+.vertical-spacer,
+#nav-bar-overflow-button,
+#smartwindow-ask-button,
+#smartwindow-ask-button-inner,
+#smartwindow-group-tabs-button,
+#ai-window-toggle,
+#taskbar-tabs-button,
+#taskbar-tabs-audio,
+#document-pip-return-to-opener-button,
+#sidebar-button,
+#fxa-toolbar-menu-button,
+#developer-button,
+#reset-pbm-toolbar-button {
+    display: none !important;
+    visibility: collapse !important;
+    width: 0 !important;
+    max-width: 0 !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+}
+
+/* Hide Taskbar Tabs button in urlbar */
+#taskbar-tabs-button {
+    display: none !important;
+    visibility: collapse !important;
+    width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Hide new tab extension takeover warning dialog */
+#extension-notification-panel,
+#extension-new-tab-notification,
+.extension-controlled-notification,
+popupnotification[popupid="extension-new-tab"] {
+    display: none !important;
+    visibility: collapse !important;
+}
+
+/* Ensure native + button is displayed right next to tabs */
+#tabbrowser-tabs[orient="horizontal"] #tabs-newtab-button,
+#tabbrowser-tabs:not([hasadjacentnewtabbutton])[orient="horizontal"] #tabs-newtab-button,
+#tabs-newtab-button {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    list-style-image: url("chrome://global/skin/icons/plus.svg") !important;
+}
+
+#tabs-newtab-button > .toolbarbutton-icon {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    width: 16px !important;
+    height: 16px !important;
+}
+
+#tabbrowser-arrowscrollbox-periphery {
+    display: flex !important;
+    visibility: visible !important;
+}
+"""
+            (chrome_dir / "userChrome.css").write_text(user_chrome_css, encoding="utf-8")
+        except Exception:
+            pass
+
         if bs.stable_canvas:
-            # Firefox's baseline fingerprinting protection randomises canvas image
-            # export (toDataURL/toBlob, 2D and WebGL) per site and per session.
-            # Turning it off makes the canvas reproducible, which is what a
-            # long-lived profile needs — together with the pinned fonts:spacing_seed,
-            # since text rendering follows that seed rather than the canvas path.
-            #
-            # The cost is deliberate: the canvas is then identical across sites,
-            # exactly as real hardware behaves, so it can be correlated between
-            # them. That is why this is per profile and off by default.
-            options["firefox_user_prefs"] = {
-                "privacy.baselineFingerprintingProtection": False,
-            }
+            ff_prefs["privacy.baselineFingerprintingProtection"] = False
         if bs.window_width and bs.window_height:
             options["window"] = (bs.window_width, bs.window_height)
         if bs.fonts:
             options["fonts"] = bs.fonts
         if self.proxy:
             options["proxy"] = self.proxy.to_camoufox_format()
+            options["raw_proxy"] = self.proxy
+        options["startup_url"] = startup_target
+        options["open_health_radar"] = getattr(bs, "open_health_radar", True)
         return options
+
+    def to_chromium_launch_options(self) -> dict[str, Any]:
+        """Build options for launching Chromium with isolated data directory and fingerprint flags."""
+        bs = self.browser_settings
+        storage_path = self.get_storage_path()
+
+        # Auto-align proxy location (timezone & language) if available and not manually overridden
+        bs_dict = bs.model_dump()
+        if self.proxy_check:
+            if not bs_dict.get("timezone") and self.proxy_check.timezone:
+                bs_dict["timezone"] = self.proxy_check.timezone
+            if self.proxy_check.country:
+                from .geo_utils import get_languages_for_country
+                country_langs = get_languages_for_country(self.proxy_check.country)
+                cur_langs = bs_dict.get("languages") or []
+                if not cur_langs or cur_langs == ["en-US", "en"] or cur_langs == ["zh-CN", "zh"]:
+                    bs_dict["languages"] = country_langs
+
+        return {
+            "profile_id": self.id,
+            "profile_name": self.name,
+            "group_name": self.group,
+            "notes": self.notes,
+            "account": getattr(self, "account", ""),
+            "user_data_dir": storage_path,
+            "browser_settings": bs_dict,
+            "proxy": self.proxy.model_dump() if self.proxy else None,
+            "raw_proxy": self.proxy,
+            "window_size": (bs.window_width or 1280, bs.window_height or 720),
+            "remote_debugging_port": bs.remote_debugging_port,
+            "custom_args": bs.custom_args,
+            "extensions": self.extensions or [],
+            "cookies": self.cookies,
+        }
 
 
 class ProfileGroup(BaseModel):

@@ -243,3 +243,58 @@ async def get_system_info():
             uptime_seconds=int(time.time() - startup_time),
         ),
     )
+
+
+@router.get(
+    "/system/kernels",
+    summary="List installed Chromium kernel versions and status.",
+    description="List all available Chromium kernels, default kernel, and active version.",
+)
+async def list_kernels():
+    """List all available Chromium kernels."""
+    from camoufox_pm.core.kernel_manager import kernel_manager
+
+    kernels = kernel_manager.list_installed_kernels()
+    return ApiResponse(
+        success=True,
+        message="Installed kernels",
+        data={
+            "default_major": kernel_manager.get_active_kernel_major(),
+            "kernels": [k.model_dump() for k in kernels],
+        },
+    )
+
+
+@router.post(
+    "/system/kernels/check-update",
+    summary="Check cloud channel for newly compiled Chromium kernels.",
+    description="Check whether a newer compiled version of Chromium is available.",
+)
+async def check_kernel_update():
+    """Check whether a newer compiled version of Chromium is available."""
+    from camoufox_pm.core.kernel_manager import kernel_manager
+
+    res = await kernel_manager.check_updates()
+    return ApiResponse(
+        success=True,
+        message="Kernel update check completed",
+        data=res.model_dump(),
+    )
+
+
+@router.get(
+    "/system/ua/generate",
+    summary="Generate micro-jittered User Agent matching real active kernel.",
+    description="Generate a realistic UA aligned with the installed Chromium version with micro-jitter.",
+)
+async def generate_ua(os: str = "windows", major: int | None = None):
+    """Generate a realistic UA aligned with the installed Chromium version with micro-jitter."""
+    from camoufox_pm.core.kernel_manager import kernel_manager
+
+    ua = kernel_manager.generate_jittered_ua(os_name=os, kernel_major=major)
+    return ApiResponse(
+        success=True,
+        message="Generated UA",
+        data={"user_agent": ua, "kernel_major": major or kernel_manager.get_active_kernel_major()},
+    )
+

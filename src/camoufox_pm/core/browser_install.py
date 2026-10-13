@@ -56,6 +56,33 @@ def valid_addon(path: Path) -> bool:
         return False
 
 
+def download_fallback_addon(name: str, dest: Path) -> bool:
+    """Download addon from GitHub release to bypass AMO geographical restrictions (HTTP 451)."""
+    import io
+    import urllib.request
+    import zipfile
+
+    urls = []
+    if name == "UBO":
+        urls = [
+            "https://github.com/gorhill/uBlock/releases/download/1.62.0/uBlock0_1.62.0.firefox.signed.xpi",
+            "https://ghproxy.net/https://github.com/gorhill/uBlock/releases/download/1.62.0/uBlock0_1.62.0.firefox.signed.xpi",
+        ]
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = resp.read()
+            z = zipfile.ZipFile(io.BytesIO(data))
+            dest.mkdir(parents=True, exist_ok=True)
+            z.extractall(dest)
+            if valid_addon(dest):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def browser_resources_ready() -> bool:
     """The files a normal launch otherwise downloads without a progress UI."""
     try:
@@ -74,6 +101,47 @@ def browser_resources_ready() -> bool:
         return False
 
 
+def ensure_search_policies_ready() -> None:
+    """Ensure distribution/policies.json does not point default search to 127.0.0.1."""
+    try:
+        from camoufox.pkgman import INSTALL_DIR
+
+        for p in Path(INSTALL_DIR).rglob("policies.json"):
+            if not p.is_file():
+                continue
+            try:
+                content = p.read_text(encoding="utf-8")
+                if "127.0.0.1" in content:
+                    data = json.loads(content)
+                    policies = data.get("policies", {})
+                    if "SearchEngines" in policies:
+                        policies["SearchEngines"] = {
+                            "PreventInstalls": False,
+                            "Default": "Google",
+                            "Add": [
+                                {
+                                    "Name": "Google",
+                                    "Description": "Google Search",
+                                    "Alias": "g",
+                                    "Method": "GET",
+                                    "URLTemplate": "https://www.google.com/search?q={searchTerms}",
+                                },
+                                {
+                                    "Name": "Bing",
+                                    "Description": "Bing Search",
+                                    "Alias": "b",
+                                    "Method": "GET",
+                                    "URLTemplate": "https://www.bing.com/search?q={searchTerms}",
+                                },
+                            ],
+                        }
+                        p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def ensure_browser_ready() -> None:
     from .browser_session import BrowserLaunchError
 
@@ -81,6 +149,7 @@ def ensure_browser_ready() -> None:
         raise BrowserLaunchError(
             "The browser needs setup. Open Settings and click Install browser before launching a profile."
         )
+    ensure_search_policies_ready()
 
 
 @contextmanager
@@ -251,7 +320,13 @@ class BrowserInstaller:
                 if failed.exists():
                     shutil.rmtree(failed)
                 addon_path.rename(failed)
-        maybe_download_addons(list(DefaultAddons))
+
+            if not valid_addon(addon_path):
+                if not download_fallback_addon(addon.name, addon_path):
+                    try:
+                        maybe_download_addons([addon])
+                    except Exception:
+                        pass
         if not browser_resources_ready():
             raise RuntimeError(
                 "A browser add-on or location database could not be downloaded. Please retry."

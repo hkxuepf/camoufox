@@ -53,6 +53,7 @@ _NEVER_FROZEN = frozenset(
         "navigator.languages",
         "window.history.length",
         "addons",
+        "fonts",
     }
 )
 

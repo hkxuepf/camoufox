@@ -94,15 +94,7 @@ jobs:
           fi
           # Fix macOS 15.5 SDK compatibility with NSScreen CGDirectDisplayID
           if [ -f "ui/display/mac/screen_utils_mac.mm" ]; then
-            python3 -c "
-p = 'ui/display/mac/screen_utils_mac.mm'
-with open(p, 'r') as f:
-    c = f.read()
-import re
-c = re.sub(r'if\s*\(@available\(macOS\s*26,\s*\*\)\)\s*\{[^}]*\}\s*else\s*\{([^}]*)\}', r'\1', c)
-with open(p, 'w') as f:
-    f.write(c)
-" || true
+            sed -i '' 's/screen_display_id = screen.CGDirectDisplayID;/screen_display_id = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];/g' ui/display/mac/screen_utils_mac.mm || true
           fi
 
       - name: Configure GN Args for Fast & Release Build

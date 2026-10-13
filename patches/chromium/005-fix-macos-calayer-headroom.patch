@@ -1,0 +1,33 @@
+--- a/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
++++ b/ui/accelerated_widget_mac/ca_renderer_layer_tree.mm
+@@ -54,11 +54,7 @@ namespace ui {
+ BASE_FEATURE(kUseCALayerContentsHeadroom, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ bool UseCALayerContentsHeadroom() {
+-  if (@available(macOS 26, iOS 26, *)) {
+-    static bool feature_enabled =
+-        base::FeatureList::IsEnabled(kUseCALayerContentsHeadroom);
+-    return feature_enabled;
+-  }
+   return false;
+ }
+ 
+@@ -1280,18 +1276,6 @@ void CARendererLayerTree::RootLayer::Upd
+     break;
+   }
+ 
+-  if (UseCALayerContentsHeadroom() && update_contents) {
+-    if (@available(macOS 26, iOS 26, *)) {
+-      if (io_surface_color_space_.IsHDR()) {
+-        ca_layer_.contentsHeadroom = 16.f;
+-        ca_layer_.preferredDynamicRange = CADynamicRangeHigh;
+-      } else {
+-        ca_layer_.contentsHeadroom = 0.f;
+-        ca_layer_.preferredDynamicRange = CADynamicRangeStandard;
+-      }
+-    }
+-  }
+-
+   if (update_contents_rect) {
+     if (type_ != CALayerType::kVideo)
+       ca_layer_.contentsRect = contents_rect_.ToCGRect();

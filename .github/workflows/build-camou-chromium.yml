@@ -96,6 +96,14 @@ jobs:
           if [ -f "ui/display/mac/screen_utils_mac.mm" ]; then
             sed -i '' 's/screen_display_id = screen.CGDirectDisplayID;/screen_display_id = [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue];/g' ui/display/mac/screen_utils_mac.mm || true
           fi
+          # Fix macOS 15.5 SDK compatibility with CALayer contentsHeadroom & preferredDynamicRange
+          if [ -f "ui/accelerated_widget_mac/ca_renderer_layer_tree.mm" ]; then
+            sed -i '' 's/bool UseCALayerContentsHeadroom() {/bool UseCALayerContentsHeadroom() { return false; \/\/ /g' ui/accelerated_widget_mac/ca_renderer_layer_tree.mm || true
+            sed -i '' 's/ca_layer_\.contentsHeadroom = 16\.f;/ca_layer_\.contentsHeadroom = 1\.f; \/\//g' ui/accelerated_widget_mac/ca_renderer_layer_tree.mm || true
+            sed -i '' 's/ca_layer_\.preferredDynamicRange = CADynamicRangeHigh;/\/\//g' ui/accelerated_widget_mac/ca_renderer_layer_tree.mm || true
+            sed -i '' 's/ca_layer_\.contentsHeadroom = 0\.f;/ca_layer_\.contentsHeadroom = 1\.f; \/\//g' ui/accelerated_widget_mac/ca_renderer_layer_tree.mm || true
+            sed -i '' 's/ca_layer_\.preferredDynamicRange = CADynamicRangeStandard;/\/\//g' ui/accelerated_widget_mac/ca_renderer_layer_tree.mm || true
+          fi
 
       - name: Configure GN Args for Fast & Release Build
         run: |

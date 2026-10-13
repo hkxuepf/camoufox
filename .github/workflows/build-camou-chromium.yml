@@ -40,6 +40,11 @@ jobs:
             sleep 5
           done
           echo "$HOME/depot_tools" >> $GITHUB_PATH
+          bash "$HOME/depot_tools/ensure_bootstrap" || true
+
+      - name: Ensure GN and Ninja Build Tools
+        run: |
+          brew install gn ninja || true
 
       - name: Cache Chromium Source Tree (Shallow)
         id: cache-chromium
@@ -50,8 +55,6 @@ jobs:
 
       - name: Fetch Chromium Source
         if: steps.cache-chromium.outputs.cache-hit != 'true'
-        env:
-          DEPOT_TOOLS_UPDATE: "0"
         run: |
           mkdir -p chromium_build && cd chromium_build
           echo 'solutions = [{"name": "src", "url": "https://chromium.googlesource.com/chromium/src.git", "deps_file": ".DEPS.git", "managed": False, "custom_deps": {}}]' > .gclient
@@ -82,7 +85,8 @@ jobs:
       - name: Configure GN Args for Fast & Release Build
         run: |
           cd chromium_build/src || cd src
-          gn gen out/Release --args='
+          GN_BIN=$(which gn || echo "/opt/homebrew/bin/gn")
+          "$GN_BIN" gen out/Release --args='
             is_debug=false
             is_component_build=false
             symbol_level=0

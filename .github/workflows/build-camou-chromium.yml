@@ -97,6 +97,8 @@ jobs:
             enable_nacl=false
             chrome_pgo_phase=0
             use_system_xcode=true
+            use_clang_modules=false
+            use_unified_system_module=false
           '
 
       - name: Compile Chromium with Ninja

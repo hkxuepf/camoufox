@@ -33,7 +33,12 @@ jobs:
 
       - name: Install Google depot_tools
         run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+          for i in 1 2 3; do
+            echo "Attempt $i: cloning depot_tools..."
+            git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools" && break || \
+            git clone --depth 1 https://github.com/chromium/tools-depot_tools.git "$HOME/depot_tools" && break || \
+            sleep 5
+          done
           echo "$HOME/depot_tools" >> $GITHUB_PATH
 
       - name: Cache Chromium Source Tree (Shallow)
@@ -49,10 +54,13 @@ jobs:
           DEPOT_TOOLS_UPDATE: "0"
         run: |
           mkdir -p chromium_build && cd chromium_build
-          # Strip leading v from tag if present for git branch
           TARGET_BRANCH=$(echo "${{ inputs.version_tag }}" | sed 's/^v//')
           echo "Fetching Chromium source branch: $TARGET_BRANCH"
-          git clone --depth 1 --branch "$TARGET_BRANCH" https://chromium.googlesource.com/chromium/src.git src
+          for i in 1 2 3; do
+            echo "Attempt $i: cloning Chromium src ($TARGET_BRANCH)..."
+            git clone --depth 1 --branch "$TARGET_BRANCH" https://chromium.googlesource.com/chromium/src.git src && break || \
+            sleep 10
+          done
           cd src
           gclient sync --no-history --shallow -j8
 

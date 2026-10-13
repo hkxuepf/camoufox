@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: "Chromium Kernel Version Tag (e.g. 155.0.8059.39)"
+        description: "Chromium Kernel Version Tag (e.g. v155.0.8059.39)"
         required: true
         default: "155.0.8059.39"
       upload_release:
@@ -12,12 +12,6 @@ on:
         required: false
         type: boolean
         default: true
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/build-camou-chromium.yml'
-      - 'patches/chromium/**'
 
 permissions:
   contents: write
@@ -66,9 +60,7 @@ jobs:
           mkdir -p chromium_build && cd chromium_build
           echo 'solutions = [{"name": "src", "url": "https://chromium.googlesource.com/chromium/src.git", "deps_file": ".DEPS.git", "managed": False, "custom_deps": {}}]' > .gclient
           echo 'target_os = ["mac"]' >> .gclient
-          TARGET_BRANCH="${{ inputs.version_tag }}"
-          [ -z "$TARGET_BRANCH" ] && TARGET_BRANCH="155.0.8059.39"
-          TARGET_BRANCH=$(echo "$TARGET_BRANCH" | sed 's/^v//')
+          TARGET_BRANCH=$(echo "${{ inputs.version_tag }}" | sed 's/^v//')
           echo "Fetching Chromium source branch: $TARGET_BRANCH"
           for i in 1 2 3; do
             echo "Attempt $i: cloning Chromium src ($TARGET_BRANCH)..."
@@ -147,11 +139,9 @@ with open(p, 'w') as f:
           path: CamouChromium-mac-arm64.tar.gz
 
       - name: Publish to GitHub Release
-        if: ${{ github.event_name == 'push' || inputs.upload_release == true }}
+        if: ${{ inputs.upload_release }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TARGET_TAG="${{ inputs.version_tag }}"
-          [ -z "$TARGET_TAG" ] && TARGET_TAG="155.0.8059.39"
-          gh release upload "$TARGET_TAG" CamouChromium-mac-arm64.tar.gz --clobber || \
-          gh release create "$TARGET_TAG" CamouChromium-mac-arm64.tar.gz --title "CamouChromium C++ Kernel $TARGET_TAG" --notes "Automated build of CamouChromium C++ Stealth Kernel."
+          gh release upload "${{ inputs.version_tag }}" CamouChromium-mac-arm64.tar.gz --clobber || \
+          gh release create "${{ inputs.version_tag }}" CamouChromium-mac-arm64.tar.gz --title "CamouChromium C++ Kernel ${{ inputs.version_tag }}" --notes "Automated build of CamouChromium C++ Stealth Kernel."

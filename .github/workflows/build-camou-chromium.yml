@@ -112,7 +112,7 @@ jobs:
           tar -czvf $GITHUB_WORKSPACE/CamouChromium-mac-arm64.tar.gz Chromium.app
 
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CamouChromium-mac-arm64
           path: CamouChromium-mac-arm64.tar.gz

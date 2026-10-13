@@ -48,7 +48,7 @@ jobs:
 
       - name: Cache Chromium Source Tree (Shallow)
         id: cache-chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: src
           key: chromium-src-${{ inputs.version_tag }}-macos-arm64

@@ -1,0 +1,14 @@
+--- a/base/process/launch_mac.cc
++++ b/base/process/launch_mac.cc
+@@ -160,11 +160,7 @@ class PosixSpawnFileActions {
+ 
+ #if BUILDFLAG(IS_MAC)
+   void Chdir(const char* path) {
+-    if (__builtin_available(macOS 26, *)) {
+-      DPSXCHECK(posix_spawn_file_actions_addchdir(&file_actions_, path));
+-    } else {
+-      DPSXCHECK(posix_spawn_file_actions_addchdir_np(&file_actions_, path));
+-    }
++    DPSXCHECK(posix_spawn_file_actions_addchdir_np(&file_actions_, path));
+   }
+ #endif

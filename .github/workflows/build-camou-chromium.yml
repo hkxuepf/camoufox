@@ -82,6 +82,10 @@ jobs:
               fi
             done
           fi
+          # Fix macOS 15.5 SDK compatibility with posix_spawn
+          if [ -f "base/process/launch_mac.cc" ]; then
+            sed -i '' 's/posix_spawn_file_actions_addchdir(&/posix_spawn_file_actions_addchdir_np(\&/g' base/process/launch_mac.cc || true
+          fi
 
       - name: Configure GN Args for Fast & Release Build
         run: |

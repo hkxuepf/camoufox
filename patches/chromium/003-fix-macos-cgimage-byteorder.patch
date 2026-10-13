@@ -1,0 +1,13 @@
+--- a/skia/ext/skia_utils_mac.mm
++++ b/skia/ext/skia_utils_mac.mm
+@@ -19,6 +19,10 @@
+ #include "third_party/skia/include/core/SkColorSpace.h"
+ #include "third_party/skia/include/utils/mac/SkCGUtils.h"
+ 
++#ifndef kCGImageByteOrder32Host
++#define kCGImageByteOrder32Host kCGImageByteOrder32Little
++#endif
++
+ namespace {
+ 
+ bool SupportsColorSpace(CGColorSpaceRef color_space) {

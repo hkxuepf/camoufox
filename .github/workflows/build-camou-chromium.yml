@@ -68,6 +68,7 @@ jobs:
           done
           cd src
           gclient sync --no-history --shallow -j8
+          gclient runhooks
 
       - name: Apply Camou Stealth C++ Patches
         run: |
@@ -95,6 +96,7 @@ jobs:
             is_official_build=false
             enable_nacl=false
             chrome_pgo_phase=0
+            use_system_xcode=true
           '
 
       - name: Compile Chromium with Ninja

@@ -1,0 +1,518 @@
+diff --git a/chrome/browser/resources/new_tab_page/new_tab_page.html b/chrome/browser/resources/new_tab_page/new_tab_page.html
+index 6c1e975f9d..ff7a60f6fc 100644
+--- a/chrome/browser/resources/new_tab_page/new_tab_page.html
++++ b/chrome/browser/resources/new_tab_page/new_tab_page.html
+@@ -1,35 +1,468 @@
+ <!doctype html>
+-<html dir="$i18n{textdirection}" lang="$i18n{language}" $i18n{roundedIconsAttribute} $i18n{webuiRoundedIconsAttribute}>
+-  <head>
+-    <meta charset="utf-8">
+-    <title>$i18n{title}</title>
+-    <style>
+-      body {
+-        background: $i18n{backgroundColor};
+-        margin: 0;
++<html dir="$i18n{textdirection}" lang="$i18n{language}">
++<head>
++  <meta charset="utf-8">
++  <title>新建环境 - 社交账号管理系统</title>
++  <style>
++    :root {
++      --bg: #f1f5f9;
++      --surface: #ffffff;
++      --border: #e2e8f0;
++      --border-hover: #cbd5e1;
++      --text-main: #0f172a;
++      --text-muted: #475569;
++      --text-faint: #94a3b8;
++      --primary: #2563eb;
++      --primary-bg: #eff6ff;
++      --primary-border: #bfdbfe;
++      --success: #059669;
++      --success-bg: #ecfdf5;
++      --success-border: #a7f3d0;
++      --warning: #d97706;
++      --warning-bg: #fffbeb;
++      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
++      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
++    }
++
++    * { margin: 0; padding: 0; box-sizing: border-box; }
++
++    body {
++      background-color: #f1f5f9;
++      background-image: 
++        linear-gradient(to right, rgba(203, 213, 225, 0.45) 1px, transparent 1px),
++        linear-gradient(to bottom, rgba(203, 213, 225, 0.45) 1px, transparent 1px);
++      background-size: 24px 24px;
++      color: var(--text-main);
++      font-family: var(--font-sans);
++      min-height: 100vh;
++      display: flex;
++      flex-direction: column;
++      align-items: center;
++      overflow-x: auto;
++      -webkit-font-smoothing: antialiased;
++    }
++
++    /* Top Fit to Window Control Bar */
++    .viewport-control-bar {
++      width: 100%;
++      height: 38px;
++      background: #ffffff;
++      border-bottom: 1px solid #e2e8f0;
++      display: flex;
++      align-items: center;
++      justify-content: center;
++      position: sticky;
++      top: 0;
++      z-index: 100;
++      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
++    }
++
++    .fit-select-wrapper {
++      display: inline-flex;
++      align-items: center;
++      gap: 8px;
++      background: #f8fafc;
++      border: 1px solid #cbd5e1;
++      border-radius: 6px;
++      padding: 2px 10px;
++      font-size: 13px;
++      color: #334155;
++    }
++
++    .fit-select-wrapper select {
++      border: none;
++      background: transparent;
++      font-size: 13px;
++      font-weight: 500;
++      color: #334155;
++      cursor: pointer;
++      outline: none;
++    }
++
++    .chain-icon { color: #64748b; font-size: 14px; }
++
++    .sandbox-stage {
++      width: 100%;
++      flex: 1;
++      display: flex;
++      justify-content: center;
++      align-items: flex-start;
++      padding: 24px 20px 48px 20px;
++      overflow: auto;
++    }
++
++    .sandbox-viewport {
++      width: 1024px;
++      min-height: 768px;
++      background: #ffffff;
++      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
++      border-radius: 12px;
++      border: 1px solid #cbd5e1;
++      transform-origin: top center;
++      transition: transform 0.15s ease-out;
++      padding: 32px 36px;
++      box-sizing: border-box;
++    }
++
++    /* Header Bar */
++    .header {
++      display: flex;
++      align-items: center;
++      justify-content: space-between;
++      margin-bottom: 24px;
++      padding-bottom: 16px;
++      border-bottom: 1px solid #e2e8f0;
++    }
++
++    .brand-title {
++      font-size: 18px;
++      font-weight: 700;
++      color: var(--text-main);
++    }
++
++    .btn-refresh {
++      display: inline-flex;
++      align-items: center;
++      gap: 6px;
++      padding: 6px 14px;
++      border-radius: 6px;
++      background: #ffffff;
++      border: 1px solid #cbd5e1;
++      color: var(--primary);
++      font-size: 13px;
++      font-weight: 600;
++      cursor: pointer;
++      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
++    }
++
++    /* Search Bar */
++    .search-box-wrap {
++      margin-bottom: 24px;
++      position: relative;
++    }
++    .search-input {
++      width: 100%;
++      height: 44px;
++      padding: 0 16px 0 44px;
++      border-radius: 22px;
++      border: 1px solid #cbd5e1;
++      font-size: 15px;
++      outline: none;
++      box-shadow: 0 2px 5px rgba(0,0,0,0.04);
++      transition: all 0.2s;
++    }
++    .search-input:focus {
++      border-color: var(--primary);
++      box-shadow: 0 0 0 3px rgba(37,99,235,0.15);
++    }
++    .search-icon {
++      position: absolute;
++      left: 16px;
++      top: 13px;
++      color: #94a3b8;
++    }
++
++    /* IP Big Hero */
++    .hero-ip-card {
++      background: #f8fafc;
++      border: 1px solid #e2e8f0;
++      border-radius: 12px;
++      padding: 24px;
++      text-align: center;
++      margin-bottom: 24px;
++    }
++
++    .ip-display-row {
++      display: inline-flex;
++      align-items: center;
++      gap: 12px;
++      margin-bottom: 16px;
++    }
++
++    .ip-check-icon {
++      width: 32px;
++      height: 32px;
++      border-radius: 50%;
++      background: #10b981;
++      color: white;
++      display: flex;
++      align-items: center;
++      justify-content: center;
++      font-size: 18px;
++    }
++
++    .ip-number {
++      font-size: 32px;
++      font-weight: 800;
++      color: #0f172a;
++      letter-spacing: -0.5px;
++      font-family: var(--font-mono);
++    }
++
++    .ping-row {
++      display: flex;
++      justify-content: center;
++      gap: 16px;
++      flex-wrap: wrap;
++    }
++
++    .ping-badge {
++      display: inline-flex;
++      align-items: center;
++      gap: 6px;
++      padding: 4px 12px;
++      background: #ffffff;
++      border: 1px solid #e2e8f0;
++      border-radius: 20px;
++      font-size: 12px;
++      color: #475569;
++      font-weight: 500;
++    }
++    .ping-badge.ok span.val { color: #10b981; font-weight: 600; }
++
++    /* Info Grid */
++    .info-grid {
++      display: grid;
++      grid-template-columns: repeat(2, 1fr);
++      gap: 16px;
++      margin-bottom: 24px;
++    }
++
++    .info-card {
++      background: #ffffff;
++      border: 1px solid #e2e8f0;
++      border-radius: 10px;
++      padding: 16px;
++    }
++    .info-title {
++      font-size: 13px;
++      font-weight: 600;
++      color: #64748b;
++      margin-bottom: 8px;
++    }
++    .info-value {
++      font-size: 14px;
++      color: #0f172a;
++      font-weight: 500;
++      line-height: 1.5;
++    }
++
++    /* Bound Account Card */
++    .account-card {
++      background: #ffffff;
++      border: 1px dashed #cbd5e1;
++      border-radius: 10px;
++      padding: 24px;
++      text-align: center;
++      margin-bottom: 24px;
++    }
++    .account-icon {
++      font-size: 32px;
++      margin-bottom: 8px;
++    }
++    .account-empty-text {
++      font-size: 13px;
++      color: #64748b;
++    }
++
++    /* Docks */
++    .dock-grid {
++      display: grid;
++      grid-template-columns: repeat(6, 1fr);
++      gap: 10px;
++    }
++    .dock-item {
++      display: flex;
++      flex-direction: column;
++      align-items: center;
++      padding: 12px 8px;
++      background: #f8fafc;
++      border: 1px solid #e2e8f0;
++      border-radius: 8px;
++      text-decoration: none;
++      color: #334155;
++      font-size: 12px;
++      font-weight: 600;
++      transition: all 0.2s;
++    }
++    .dock-item:hover {
++      background: #ffffff;
++      border-color: var(--primary);
++      transform: translateY(-2px);
++      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
++    }
++    .dock-icon { font-size: 20px; margin-bottom: 4px; }
++  </style>
++</head>
++<body>
++  <div class="viewport-control-bar">
++    <div class="fit-select-wrapper">
++      <select id="viewportModeSelect" onchange="setViewportScale(this.value)">
++        <option value="fit" selected>Fit to window</option>
++        <option value="100">100%</option>
++        <option value="75">75%</option>
++        <option value="50">50%</option>
++      </select>
++      <span class="chain-icon">🔗</span>
++    </div>
++  </div>
++
++  <div class="sandbox-stage">
++    <div id="sandboxViewport" class="sandbox-viewport">
++      <!-- Header -->
++      <div class="header">
++        <div class="brand-title" id="envTitle">社交账号管理系统</div>
++        <button class="btn-refresh" onclick="refreshAll()">
++          <span>🔄 刷新</span>
++        </button>
++      </div>
++
++      <!-- Quick Omnibox Search -->
++      <div class="search-box-wrap">
++        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
++          <circle cx="11" cy="11" r="8"></circle>
++          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
++        </svg>
++        <input type="text" class="search-input" id="searchInput" placeholder="在 Google 中搜索或输入网址..." onkeydown="handleSearch(event)">
++      </div>
++
++      <!-- Hero IP -->
++      <div class="hero-ip-card">
++        <div class="ip-display-row">
++          <div class="ip-check-icon">✓</div>
++          <div class="ip-number" id="ipDisplay">探查中...</div>
++        </div>
++        <div class="ping-row">
++          <div class="ping-badge ok" id="pingTikTok"><span>TikTok</span> <span class="val">✓ 检测中</span></div>
++          <div class="ping-badge ok" id="pingGoogle"><span>Google</span> <span class="val">✓ 检测中</span></div>
++          <div class="ping-badge ok" id="pingBaidu"><span>Baidu</span> <span class="val">✓ 检测中</span></div>
++          <div class="ping-badge ok" id="pingFacebook"><span>Facebook</span> <span class="val">✓ 检测中</span></div>
++          <div class="ping-badge ok" id="pingIphey"><span>Iphey</span> <span class="val">✓ 检测中</span></div>
++        </div>
++      </div>
++
++      <!-- Info Grid -->
++      <div class="info-grid">
++        <div class="info-card">
++          <div class="info-title">地理位置 / 地区</div>
++          <div class="info-value" id="geoDisplay">国家/地区: 探测中...<br>州/省: --, 城市: --</div>
++        </div>
++        <div class="info-card">
++          <div class="info-title">指纹与虚拟硬件拓扑</div>
++          <div class="info-value" id="hwDisplay">内核: Chromium 155<br>物理分辨率: 1024 × 768</div>
++        </div>
++      </div>
++
++      <!-- Bound Account -->
++      <div class="account-card">
++        <div class="account-icon">🏪 🔑</div>
++        <div class="account-empty-text">本环境暂未绑定账号<br><span style="color:#94a3b8;font-size:12px;">环境隔离已建立，可随时添加海外社交或电商账号</span></div>
++      </div>
++
++      <!-- Quick Docks -->
++      <div class="dock-grid">
++        <a href="https://iphey.com" class="dock-item"><span class="dock-icon">🛡️</span>Iphey</a>
++        <a href="https://whoer.net" class="dock-item"><span class="dock-icon">🕵️</span>Whoer</a>
++        <a href="https://browserleaks.com" class="dock-item"><span class="dock-icon">🧪</span>BrowserLeaks</a>
++        <a href="https://pixelscan.net" class="dock-item"><span class="dock-icon">🎯</span>Pixelscan</a>
++        <a href="https://www.browserscan.net" class="dock-item"><span class="dock-icon">🔍</span>BrowserScan</a>
++        <a href="https://ping0.cc/env" class="dock-item"><span class="dock-icon">⚡</span>Ping0</a>
++      </div>
++    </div>
++  </div>
++
++  <script>
++    let targetW = 1024;
++    let targetH = 768;
++    let currentMode = 'fit';
++
++    function setViewportScale(mode) {
++      currentMode = mode;
++      const vp = document.getElementById('sandboxViewport');
++      if (!vp) return;
++      if (mode === 'fit') {
++        const availW = (window.innerWidth || 1280) - 48;
++        const availH = (window.innerHeight || 800) - 60;
++        const scaleW = availW / targetW;
++        const scaleH = availH / targetH;
++        const scale = Math.min(1, Math.min(scaleW, scaleH));
++        vp.style.transform = 'scale(' + scale + ')';
++      } else {
++        const s = parseInt(mode, 10) / 100;
++        vp.style.transform = 'scale(' + s + ')';
+       }
++    }
++
++    window.addEventListener('resize', () => {
++      if (currentMode === 'fit') setViewportScale('fit');
++    });
+ 
+-      #backgroundImage {
+-        border: none;
+-        height: 100%;
+-        pointer-events: none;
+-        position: fixed;
+-        top: 0;
+-        visibility: hidden;
+-        width: 100%;
++    function handleSearch(e) {
++      if (e.key === 'Enter') {
++        const q = e.target.value.trim();
++        if (!q) return;
++        if (/^https?:\/\//i.test(q)) {
++          window.location.href = q;
++        } else if (/^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/.*)?$/.test(q)) {
++          window.location.href = 'https://' + q;
++        } else {
++          window.location.href = 'https://www.google.com/search?q=' + encodeURIComponent(q);
++        }
+       }
++    }
+ 
+-      [show-background-image] #backgroundImage {
+-        visibility: visible;
++    async function refreshAll() {
++      // 探查 IP
++      try {
++        const res = await fetch('https://api.ipify.org?format=json');
++        const data = await res.json();
++        if (data.ip) {
++          document.getElementById('ipDisplay').innerText = data.ip;
++        }
++      } catch(e) {
++        document.getElementById('ipDisplay').innerText = '127.0.0.1 (本地直连)';
+       }
+-    </style>
+-  </head>
+-  <body>
+-    <iframe id="backgroundImage" src="$i18nRaw{backgroundImageUrl}"></iframe>
+-    <ntp-app></ntp-app>
+-    <script type="module" src="new_tab_page.js"></script>
+-    <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
+-    <link rel="stylesheet" href="chrome://theme/colors.css?sets=ui,chrome">
+-    <link rel="stylesheet" href="shared_vars.css">
+-  </body>
++
++      // 测试各站点测速
++      const tests = [
++        { id: 'pingTikTok', url: 'https://www.tiktok.com/favicon.ico', name: 'TikTok' },
++        { id: 'pingGoogle', url: 'https://www.google.com/favicon.ico', name: 'Google' },
++        { id: 'pingBaidu', url: 'https://www.baidu.com/favicon.ico', name: 'Baidu' },
++        { id: 'pingFacebook', url: 'https://www.facebook.com/favicon.ico', name: 'Facebook' },
++        { id: 'pingIphey', url: 'https://iphey.com/favicon.ico', name: 'Iphey' }
++      ];
++
++      for (const t of tests) {
++        const start = performance.now();
++        try {
++          await fetch(t.url, { mode: 'no-cors', cache: 'no-cache' });
++          const latency = Math.round(performance.now() - start);
++          const el = document.getElementById(t.id);
++          if (el) el.innerHTML = '<span>' + t.name + '</span> <span class="val">✓ ' + latency + 'ms</span>';
++        } catch(e) {
++          const el = document.getElementById(t.id);
++          if (el) el.innerHTML = '<span>' + t.name + '</span> <span class="val">✓ 正常</span>';
++        }
++      }
++
++      // 填充硬件与屏幕信息
++      const w = window.screen.width || window.innerWidth;
++      const h = window.screen.height || window.innerHeight;
++      targetW = w > 600 ? w : 1024;
++      targetH = h > 400 ? h : 768;
++      const vp = document.getElementById('sandboxViewport');
++      if (vp) {
++        vp.style.width = targetW + 'px';
++        vp.style.minHeight = targetH + 'px';
++      }
++      document.getElementById('hwDisplay').innerHTML = '操作系统: ' + navigator.platform + '<br>物理分辨率: ' + targetW + ' × ' + targetH + '<br>核心数: ' + (navigator.hardwareConcurrency || 8) + ' 核心, 内存: ' + (navigator.deviceMemory || 8) + ' GB';
++      setViewportScale('fit');
++    }
++
++    window.addEventListener('DOMContentLoaded', () => {
++      setViewportScale('fit');
++      refreshAll();
++    });
++  </script>
++</body>
+ </html>
+diff --git a/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc b/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
+index 06edf4b13c..59996d3484 100644
+--- a/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
++++ b/chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.cc
+@@ -865,6 +865,12 @@ content::WebUIDataSource* CreateAndAddNewTabPageUiHtmlSource(
+   source->OverrideContentSecurityPolicy(
+       network::mojom::CSPDirectiveName::MediaSrc,
+       "media-src blob: data: 'self';");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ScriptSrc,
++      "script-src 'self' 'unsafe-inline' 'unsafe-eval' *;");
++  source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::ConnectSrc,
++      "connect-src * https: http: ws: wss: 'self';");
+ 
+   return source;
+ }

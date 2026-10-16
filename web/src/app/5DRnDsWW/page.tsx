@@ -41,6 +41,7 @@ import {
 import { useAuth } from '@/components/login-gate'
 import { useAdminContext } from '@/components/admin-context'
 import { useI18n, LanguageToggle } from '@/lib/i18n'
+import { AdminReleasesView } from '@/components/admin-releases'
 
 export default function AdminConsolePage() {
   const { role } = useAuth()
@@ -166,6 +167,7 @@ export default function AdminConsolePage() {
               activeTab === 'users' ? (language === 'zh' ? '用户与配额管理' : 'User Management') :
               activeTab === 'plans' ? (language === 'zh' ? '套餐配置' : 'Plan Settings') :
               activeTab === 'orders' ? (language === 'zh' ? 'USDT 订单记录' : 'USDT Orders') :
+              activeTab === 'releases' ? (language === 'zh' ? '版本与内核中台' : 'Releases & Kernels') :
               (language === 'zh' ? '支付与系统设置' : 'Payment & System Settings')
             }
           </span>
@@ -761,6 +763,11 @@ export default function AdminConsolePage() {
               </table>
             </div>
           </div>
+        )}
+
+        {/* --- TAB: RELEASES & MULTI-KERNEL CENTER --- */}
+        {activeTab === 'releases' && (
+          <AdminReleasesView language={language} />
         )}
 
         {/* --- TAB 5: PAYMENT GATEWAY SETTINGS --- */}

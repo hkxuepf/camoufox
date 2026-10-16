@@ -80,3 +80,18 @@ ssh -p 22 root@10.10.10.5 "cd /www/wwwroot/docker/camoufox && tar -xzf dist_sync
    ```bash
    cd /www/wwwroot/docker/camoufox && docker compose restart
    ```
+
+---
+
+## 五、Windows C++ 内核专用编译机信息
+
+* **服务器内网 IP**: `192.168.101.107`
+* **SSH 端口**: `22`
+* **SSH 用户名**: `Administrator`
+* **SSH 密码**: `112112`
+* **编译工作区目录**: `C:\Users\Administrator\Documents\camoufox`
+* **常用检查命令**:
+  - 查看编译进程: `powershell -Command "Get-Process -Name ninja, clang-cl"`
+  - 查看编译日志: `powershell -Command "Get-Content build_ninja.log -Tail 30"`
+  - 查看定时构建任务: `schtasks /query /tn ChromeBuild /v /fo list`
+

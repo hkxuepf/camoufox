@@ -25,16 +25,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const toast = useCallback((kind: ToastKind, title: string, detail?: string) => {
-    // Date.now collides when two toasts land in the same millisecond.
     const id = Date.now() + Math.random()
-    setToasts((current) => [...current, { id, kind, title, detail }])
+    // 永远只保留最新的这 1 个通知：新通知直接顶替并清除所有历史老通知
+    setToasts([{ id, kind, title, detail }])
   }, [])
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
       <div
-        className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-[340px] flex-col gap-2"
+        className="pointer-events-none fixed top-4 right-4 z-[9999] flex w-[360px] flex-col gap-2"
         role="status"
         aria-live="polite"
       >
@@ -48,8 +48,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 function ToastRow({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   useEffect(() => {
-    // Errors stay longer — they usually carry something worth reading.
-    const timer = setTimeout(onDismiss, toast.kind === 'error' ? 8000 : 4000)
+    // 2.5 秒后自动消失，避免长时间遮盖界面
+    const timer = setTimeout(onDismiss, toast.kind === 'error' ? 5000 : 2500)
     return () => clearTimeout(timer)
   }, [onDismiss, toast.kind])
 

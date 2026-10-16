@@ -123,6 +123,8 @@ async def get_radar_dashboard(profile_id: str = ""):
         engine_name=engine_name,
         proxy_info=proxy_info,
         init_ip=init_ip,
+        target_width=width,
+        target_height=height,
     )
     return HTMLResponse(content=html_content)
 
@@ -152,6 +154,8 @@ def generate_radar_html_str(
     engine_name: str = "Chromium 154",
     proxy_info: str = "直连",
     init_ip: str = "探查中...",
+    target_width: int | str = 1280,
+    target_height: int | str = 720,
 ) -> str:
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -159,11 +163,12 @@ def generate_radar_html_str(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{env_name} - 社交账号管理系统</title>
+    <base target="_blank">
     <style>
         :root {{
-            --bg: #f8fafc;
+            --bg: #f1f5f9;
             --surface: #ffffff;
-            --surface-subtle: #f1f5f9;
+            --surface-subtle: #f8fafc;
             --border: #e2e8f0;
             --border-hover: #cbd5e1;
             --text-main: #0f172a;
@@ -185,6 +190,8 @@ def generate_radar_html_str(
             --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
             --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
             --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+            --target-w: {target_width}px;
+            --target-h: {target_height}px;
         }}
 
         * {{
@@ -194,22 +201,89 @@ def generate_radar_html_str(
         }}
 
         body {{
-            background-color: var(--bg);
+            background-color: #f1f5f9;
             background-image: 
-                radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.04) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(5, 150, 105, 0.03) 0px, transparent 50%),
-                linear-gradient(to right, rgba(226, 232, 240, 0.3) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(226, 232, 240, 0.3) 1px, transparent 1px);
-            background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+                linear-gradient(to right, rgba(203, 213, 225, 0.45) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(203, 213, 225, 0.45) 1px, transparent 1px);
+            background-size: 24px 24px;
             color: var(--text-main);
             font-family: var(--font-sans);
             min-height: 100vh;
-            padding: 28px 24px 60px 24px;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: auto;
             -webkit-font-smoothing: antialiased;
         }}
 
+        .viewport-control-bar {{
+            width: 100%;
+            height: 38px;
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        }}
+
+        .fit-select-wrapper {{
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 2px 10px;
+            font-size: 13px;
+            color: #334155;
+            cursor: pointer;
+        }}
+
+        .fit-select-wrapper select {{
+            border: none;
+            background: transparent;
+            font-size: 13px;
+            font-weight: 500;
+            color: #334155;
+            cursor: pointer;
+            outline: none;
+        }}
+
+        .chain-icon {{
+            color: #64748b;
+        }}
+
+        .sandbox-stage {{
+            width: 100%;
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px 20px 48px 20px;
+            overflow: auto;
+        }}
+
+        .sandbox-viewport {{
+            width: var(--target-w);
+            min-height: var(--target-h);
+            background: #ffffff;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+            border-radius: 12px;
+            border: 1px solid #cbd5e1;
+            transform-origin: top center;
+            transition: transform 0.15s ease-out;
+            padding: 28px 32px;
+            box-sizing: border-box;
+        }}
+
         .container {{
-            max-width: 1240px;
+            width: 100%;
             margin: 0 auto;
         }}
 
@@ -824,7 +898,23 @@ def generate_radar_html_str(
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="viewport-control-bar">
+        <div class="fit-select-wrapper">
+            <select id="viewportModeSelect" onchange="setViewportScale(this.value)">
+                <option value="fit" selected>Fit to window</option>
+                <option value="100">100%</option>
+                <option value="75">75%</option>
+                <option value="50">50%</option>
+            </select>
+            <svg class="chain-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+        </div>
+    </div>
+    <div class="sandbox-stage">
+        <div id="sandboxViewport" class="sandbox-viewport">
+            <div class="container">
         <!-- Header -->
         <header class="header">
             <div class="brand-badge">
@@ -1157,6 +1247,7 @@ def generate_radar_html_str(
                     <div class="dock-tag">环境与伪装度评分</div>
                 </a>
             </div>
+            </div>
         </div>
     </div>
 
@@ -1167,6 +1258,36 @@ def generate_radar_html_str(
         </svg>
         <span id="toastMsg">已复制到剪贴板</span>
     </div>
+
+    <script>
+        const targetW = {target_width};
+        const targetH = {target_height};
+        let currentMode = 'fit';
+
+        function setViewportScale(mode) {{
+            currentMode = mode;
+            const vp = document.getElementById('sandboxViewport');
+            if (!vp) return;
+            if (mode === 'fit') {{
+                const availW = (window.innerWidth || 1280) - 48;
+                const availH = (window.innerHeight || 800) - 70;
+                const scaleW = availW / targetW;
+                const scaleH = availH / targetH;
+                const scale = Math.min(1, Math.min(scaleW, scaleH));
+                vp.style.transform = `scale(${{scale}})`;
+            }} else {{
+                const s = parseInt(mode, 10) / 100;
+                vp.style.transform = `scale(${{s}})`;
+            }}
+        }}
+
+        window.addEventListener('resize', () => {{
+            if (currentMode === 'fit') setViewportScale('fit');
+        }});
+        window.addEventListener('DOMContentLoaded', () => {{
+            setViewportScale('fit');
+        }});
+    </script>
     <script src="radar.js"></script>
 </body>
 </html>

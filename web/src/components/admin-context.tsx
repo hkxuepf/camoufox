@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, ReactNode } from 'react'
 
-export type AdminTab = 'dashboard' | 'users' | 'plans' | 'orders' | 'settings'
+export type AdminTab = 'dashboard' | 'users' | 'plans' | 'orders' | 'releases' | 'settings'
 
 interface AdminContextType {
   activeTab: AdminTab

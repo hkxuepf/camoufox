@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
     api_key: str | None = None
     db_path: str = "data/profiles.db"
+    database_url: str | None = Field(default_factory=lambda: os.environ.get("DATABASE_URL") or os.environ.get("CPM_DATABASE_URL"))
+    redis_url: str | None = Field(default_factory=lambda: os.environ.get("REDIS_URL") or os.environ.get("CPM_REDIS_URL"))
     secret_key: str | None = None
     webui_dir: str | None = None
     cloud_server: str = "https://camoufox.usrde.com"

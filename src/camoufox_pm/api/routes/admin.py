@@ -275,3 +275,98 @@ async def update_admin_settings(body: AdminSettingsUpdateRequest):
         if value is not None:
             await storage.update_admin_setting(key, value)
     return ApiResponse(success=True, message="Settings updated", data=True)
+
+
+# --- Admin Client & Kernel Releases Management ---
+
+class ClientReleaseCreateRequest(BaseModel):
+    version: str
+    title: str = "CamouHub 新版本发布"
+    changelog: str = ""
+    changelog_en: str = ""
+    min_version: str = "1.0.0"
+    is_force_update: bool = False
+    is_active: bool = True
+    mac_arm64_url: str | None = None
+    mac_x64_url: str | None = None
+    win_x64_url: str | None = None
+
+
+class KernelReleaseCreateRequest(BaseModel):
+    engine: str = "chromium"
+    version: str
+    display_name: str = ""
+    changelog: str = ""
+    is_recommended: bool = False
+    is_active: bool = True
+    mac_arm64_url: str | None = None
+    mac_arm64_sha256: str | None = None
+    mac_x64_url: str | None = None
+    mac_x64_sha256: str | None = None
+    win_x64_url: str | None = None
+    win_x64_sha256: str | None = None
+
+
+@router.get("/admin/releases/client", response_model=ApiResponse[list[dict[str, Any]]])
+async def list_admin_client_releases():
+    """List all desktop client releases."""
+    storage = get_storage_manager()
+    releases = await storage.list_client_releases()
+    return ApiResponse(success=True, data=releases)
+
+
+@router.post("/admin/releases/client", response_model=ApiResponse[dict[str, Any]])
+async def create_admin_client_release(body: ClientReleaseCreateRequest):
+    """Create or publish a new desktop client release."""
+    storage = get_storage_manager()
+    release = await storage.create_client_release(body.model_dump())
+    return ApiResponse(success=True, message="Client release created", data=release)
+
+
+@router.put("/admin/releases/client/{release_id}", response_model=ApiResponse[bool])
+async def update_admin_client_release(release_id: str, body: dict[str, Any]):
+    """Update desktop client release attributes."""
+    storage = get_storage_manager()
+    ok = await storage.update_client_release(release_id, body)
+    return ApiResponse(success=ok, message="Client release updated" if ok else "Not found", data=ok)
+
+
+@router.delete("/admin/releases/client/{release_id}", response_model=ApiResponse[bool])
+async def delete_admin_client_release(release_id: str):
+    """Delete a client release."""
+    storage = get_storage_manager()
+    ok = await storage.delete_client_release(release_id)
+    return ApiResponse(success=ok, message="Client release deleted" if ok else "Not found", data=ok)
+
+
+@router.get("/admin/releases/kernel", response_model=ApiResponse[list[dict[str, Any]]])
+async def list_admin_kernel_releases(engine: str | None = None):
+    """List all multi-engine anti-detect kernel releases."""
+    storage = get_storage_manager()
+    releases = await storage.list_kernel_releases(engine=engine)
+    return ApiResponse(success=True, data=releases)
+
+
+@router.post("/admin/releases/kernel", response_model=ApiResponse[dict[str, Any]])
+async def create_admin_kernel_release(body: KernelReleaseCreateRequest):
+    """Create or publish a browser engine kernel release."""
+    storage = get_storage_manager()
+    release = await storage.create_kernel_release(body.model_dump())
+    return ApiResponse(success=True, message="Kernel release created", data=release)
+
+
+@router.put("/admin/releases/kernel/{release_id}", response_model=ApiResponse[bool])
+async def update_admin_kernel_release(release_id: str, body: dict[str, Any]):
+    """Update kernel release attributes."""
+    storage = get_storage_manager()
+    ok = await storage.update_kernel_release(release_id, body)
+    return ApiResponse(success=ok, message="Kernel release updated" if ok else "Not found", data=ok)
+
+
+@router.delete("/admin/releases/kernel/{release_id}", response_model=ApiResponse[bool])
+async def delete_admin_kernel_release(release_id: str):
+    """Delete a kernel release."""
+    storage = get_storage_manager()
+    ok = await storage.delete_kernel_release(release_id)
+    return ApiResponse(success=ok, message="Kernel release deleted" if ok else "Not found", data=ok)
+

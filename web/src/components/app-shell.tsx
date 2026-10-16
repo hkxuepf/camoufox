@@ -7,11 +7,13 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/login-gate'
 import { BillingModal } from '@/components/billing-modal'
 import { AdminTab, useAdminContext } from '@/components/admin-context'
-import { systemAPI } from '@/lib/api'
+import { systemAPI, type ClientUpdateCheckResult, type KernelReleaseItem } from '@/lib/api'
 import { useI18n, LanguageToggle } from '@/lib/i18n'
 import {
   Bell,
+  CheckCircle2,
   Clock,
+  DownloadCloud,
   FolderTree,
   Globe,
   Layers,
@@ -19,9 +21,11 @@ import {
   LogOut,
   Monitor,
   Package,
+  RefreshCw,
   RotateCw,
   Settings,
   Shield,
+  Sparkles,
   Star,
   Terminal,
   Trash2,
@@ -35,6 +39,7 @@ const ADMIN_NAV_ITEMS: { id: AdminTab; labelZh: string; labelEn: string; icon: a
   { id: 'users', labelZh: '用户管理', labelEn: 'Users', icon: Users },
   { id: 'plans', labelZh: '套餐配置', labelEn: 'Plans', icon: Package },
   { id: 'orders', labelZh: 'USDT 订单', labelEn: 'USDT Orders', icon: Wallet },
+  { id: 'releases', labelZh: '版本与内核', labelEn: 'Releases & Kernels', icon: Layers },
   { id: 'settings', labelZh: '支付与系统', labelEn: 'Settings', icon: Settings },
 ]
 
@@ -52,6 +57,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null)
   const [billingOpen, setBillingOpen] = useState(false)
   const { t, language } = useI18n()
+
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [clientUpdate, setClientUpdate] = useState<ClientUpdateCheckResult | null>(null)
+  const [kernelReleases, setKernelReleases] = useState<KernelReleaseItem[]>([])
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true)
+    try {
+      const [update, kernels] = await Promise.all([
+        systemAPI.checkClientUpdate('mac_arm64', '1.0.0'),
+        systemAPI.getKernelsManifest('mac_arm64'),
+      ])
+      setClientUpdate(update)
+      setKernelReleases(kernels || [])
+    } catch (e) {
+      console.error('Update check failed:', e)
+    } finally {
+      setCheckingUpdate(false)
+    }
+  }
+
+  useEffect(() => {
+    handleCheckUpdate()
+  }, [])
 
   useEffect(() => {
     if (isAdmin && !current.startsWith('/5DRnDsWW')) {
@@ -80,21 +110,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/settings/', id: 'settings', label: '系统设置', icon: Settings },
   ]
 
-  // Actual supported top tabs
-  const TOP_TABS = [
-    { id: 'browser', label: '浏览器', href: '/' },
-    { id: 'proxies', label: '代理管理', href: '/proxies/' },
-    { id: 'extensions', label: '扩展中心', href: '/extensions/' },
-    { id: 'groups', label: '环境分组', href: '/groups/' },
-    { id: 'schedules', label: '定时计划', href: '/schedules/' },
-    { id: 'api-service', label: '开发者中心', href: '/api-service/' },
-    { id: 'billing', label: '费用与套餐', onClick: () => setBillingOpen(true) },
-    { id: 'settings', label: '系统设置', href: '/settings/' },
-  ]
-
   return (
     <div className="flex h-screen flex-col bg-[#f4f6fa] select-none text-[#1e293b]">
-      {/* ================= 1. TOP HEADER (Hub Commercial Style) ================= */}
+      {/* ================= 1. TOP HEADER (Clean Commercial Style) ================= */}
       <header className="flex h-[46px] shrink-0 items-center justify-between border-b border-[#eaedf1] bg-white px-3.5 z-20">
         {/* Left: Brand Logo & Title */}
         <div className="flex items-center gap-6">
@@ -113,60 +131,113 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
           </Link>
-
-          {/* Top Navigation Tabs (Only our actual real features) */}
-          {!isAdmin && (
-            <nav className="flex items-center gap-1 pl-2">
-              {TOP_TABS.map((tab) => {
-                const isTabActive = tab.href
-                  ? tab.href === '/'
-                    ? current === '/' && !filterParam
-                    : current.startsWith(tab.href.replace(/\/$/, ''))
-                  : false
-
-                if (tab.href) {
-                  return (
-                    <Link
-                      key={tab.id}
-                      href={tab.href}
-                      className={`relative flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors cursor-pointer ${
-                        isTabActive
-                          ? 'text-[#1664ff] font-semibold'
-                          : 'text-[#475569] hover:text-[#0f172a]'
-                      }`}
-                    >
-                      <span>{tab.label}</span>
-                      {isTabActive && (
-                        <span className="absolute bottom-[-6px] left-3 right-3 h-[2px] rounded-full bg-[#1664ff]" />
-                      )}
-                    </Link>
-                  )
-                }
-
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={tab.onClick}
-                    className="relative flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors cursor-pointer text-[#475569] hover:text-[#0f172a]"
-                  >
-                    <span>{tab.label}</span>
-                  </button>
-                )
-              })}
-            </nav>
-          )}
         </div>
 
         {/* Right Status & User Panel */}
-        <div className="flex items-center gap-3">
-          {/* Refresh / Server status */}
-          <div
-            className="flex items-center gap-1 text-[11px] text-[#64748b] bg-[#f8fafc] border border-[#eaedf1] px-2 py-0.5 rounded"
-            title="本地服务核心"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" />
-            <span className="font-mono">{address || '127.0.0.1'}</span>
+        <div className="relative flex items-center gap-3">
+          {/* HubStudio-grade 更新中心 Button */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setUpdateOpen(!updateOpen)}
+              title="更新中心"
+              className="relative flex h-7 w-7 items-center justify-center rounded text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1664ff] transition-colors"
+            >
+              <DownloadCloud size={15} />
+              {clientUpdate?.has_update && (
+                <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+              )}
+            </button>
+
+            {/* 更新中心 Popover 浮层 */}
+            {updateOpen && (
+              <div className="absolute right-0 top-[38px] z-50 w-[340px] rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-xl text-xs animate-in fade-in zoom-in-95 duration-100">
+                {/* Popover Header */}
+                <div className="flex items-center justify-between border-b border-[#f1f5f9] pb-2.5 mb-3">
+                  <div className="flex items-center gap-1.5 font-bold text-[#0f172a] text-sm">
+                    <Sparkles size={14} className="text-[#1664ff]" />
+                    <span>更新中心</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCheckUpdate}
+                    disabled={checkingUpdate}
+                    className="flex items-center gap-1 text-[11px] font-medium text-[#1664ff] hover:text-[#0f54d4] transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw size={12} className={checkingUpdate ? 'animate-spin' : ''} />
+                    <span>{checkingUpdate ? '正在检查...' : '检查更新'}</span>
+                  </button>
+                </div>
+
+                {/* State B: Client update available */}
+                {clientUpdate?.has_update ? (
+                  <div className="mb-3 rounded-md border border-amber-200 bg-amber-50/70 p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-semibold text-amber-900">
+                        发现客户端新版本 v{clientUpdate.latest_version}
+                      </span>
+                      <span className="rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        NEW
+                      </span>
+                    </div>
+                    {clientUpdate.changelog && (
+                      <p className="text-[11px] text-amber-800/90 whitespace-pre-line mb-2.5 line-clamp-3">
+                        {clientUpdate.changelog}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={clientUpdate.download_url || '#'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 rounded bg-[#1664ff] py-1.5 text-center text-xs font-semibold text-white shadow-sm hover:bg-[#0f54d4] transition-colors"
+                      >
+                        立即升级下载
+                      </a>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* State C: Kernels section */}
+                <div className="mb-3 space-y-1.5">
+                  <div className="text-[11px] font-semibold text-[#64748b]">多引擎内核库资产</div>
+                  <div className="rounded-md border border-[#f1f5f9] bg-[#f8fafc] p-2.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span className="font-medium text-[#1e293b]">Chrome 155 (首发基准自研)</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">本地已激活</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-[#e2e8f0]/60">
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                        <span className="font-medium text-[#1e293b]">Chrome 146 (Cloak 87项补丁)</span>
+                      </div>
+                      <span className="text-[10px] text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">云端就绪 · 秒开</span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-[#e2e8f0]/60">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-amber-500 text-[11px]">🦊</span>
+                        <span className="font-medium text-[#1e293b]">Firefox 135 (Camoufox 原生)</span>
+                      </div>
+                      <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">本地已激活</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* State A: Status footer */}
+                {!clientUpdate?.has_update && (
+                  <div className="rounded-md bg-[#f1f5f9]/60 px-3 py-2 text-center text-[#64748b]">
+                    <div className="flex items-center justify-center gap-1 text-[11px] font-medium text-emerald-600 mb-0.5">
+                      <CheckCircle2 size={12} />
+                      <span>客户端已是最新版本 (v1.0.0)</span>
+                    </div>
+                    <div className="text-[10px] text-[#94a3b8]">宿主: macOS Apple Silicon (arm64)</div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* User Profile & Plan Badge */}

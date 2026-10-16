@@ -5,6 +5,7 @@ import re
 import secrets
 import string
 import sys
+import uuid
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -106,6 +107,9 @@ class BrowserSettings(BaseModel):
     # Browser chrome only; fingerprint and privacy settings remain independent.
     browser_ui: Literal["desktop", "camoufox"] = "desktop"
     browser_engine: Literal["chromium", "camoufox"] = "camoufox"
+    kernel_version: str | None = None
+    kernel_channel: Literal["stable", "beta", "dev"] = "stable"
+    kernel_auto_download: bool = True
 
     # Base settings
     os: str = "macos" if sys.platform == "darwin" else "windows"  # windows, linux, macos
@@ -132,6 +136,7 @@ class BrowserSettings(BaseModel):
     hardware_concurrency: int | None = None
     device_memory: int | None = None
     max_touch_points: int = 0
+    device_model: str | None = None
 
     # Fingerprint noise preferences. Camoufox applies canvas/WebGL/audio spoofing
     # itself; these flags are stored intent and are not forwarded as config keys.
@@ -317,6 +322,12 @@ class Profile(BaseModel):
     # reverting it. Storage bookkeeping rather than profile data, but the API
     # exposes it so a client editing a form can pass back the version it loaded.
     row_version: int = 0
+
+    # Automated Cloud Roaming & Sync metadata
+    sync_status: str | None = "synced"  # synced, syncing, pending, failed
+    last_synced_at: datetime | None = None
+    sync_size_kb: float | None = None
+    cloud_sync_enabled: bool = True
 
     def get_storage_path(self, base_path: str = "data/profiles") -> str:
         """Return (and lazily assign) the on-disk path for this profile's data."""
@@ -702,6 +713,7 @@ popupnotification[popupid="extension-new-tab"] {
             "custom_args": bs.custom_args,
             "extensions": self.extensions or [],
             "cookies": self.cookies,
+            "kernel_version": bs.kernel_version or "155.0.8059",
         }
 
 
@@ -842,3 +854,42 @@ class ScheduleRun(BaseModel):
     message: str | None = None
 
     model_config = ConfigDict(use_enum_values=True)
+
+
+class ClientRelease(BaseModel):
+    """Metadata describing a published desktop client application version."""
+
+    id: str = Field(default_factory=lambda: f"cr_{uuid.uuid4().hex[:10]}")
+    version: str = Field(..., description="Semantic version string, e.g. '1.0.1'")
+    title: str = "CamouHub 新版本发布"
+    changelog: str = ""
+    changelog_en: str = ""
+    min_version: str = "1.0.0"
+    is_force_update: bool = False
+    is_active: bool = True
+    mac_arm64_url: str | None = None
+    mac_x64_url: str | None = None
+    win_x64_url: str | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class KernelRelease(BaseModel):
+    """Metadata describing a browser engine anti-detect kernel in cloud repository."""
+
+    id: str = Field(default_factory=lambda: f"kr_{uuid.uuid4().hex[:10]}")
+    engine: Literal["chromium", "camoufox"] = "chromium"
+    version: str = Field(..., description="Kernel version string, e.g. '155.0.8059' or '135.0-beta.36'")
+    display_name: str = ""
+    changelog: str = ""
+    is_recommended: bool = False
+    is_active: bool = True
+    mac_arm64_url: str | None = None
+    mac_arm64_sha256: str | None = None
+    mac_x64_url: str | None = None
+    mac_x64_sha256: str | None = None
+    win_x64_url: str | None = None
+    win_x64_sha256: str | None = None
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+

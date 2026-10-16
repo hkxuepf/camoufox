@@ -55,11 +55,11 @@ export function ChromiumSetup() {
 
   const descText = ready
     ? (isZh
-        ? `已安装内核版本 ${chromium?.version || '154.0 (Anti-detect)'}。深度屏蔽 CDP 指纹特征，支持极速多开与隔离。`
-        : `Chromium ${chromium?.version || 'installed'}. Custom anti-detect build with isolated fingerprinting.`)
+        ? `已安装内核版本 ${chromium?.version || '155.0.8059 (Anti-detect)'}。深度屏蔽 CDP 指纹特征，基于 GitHub Releases 云端多内核库托管，支持环境终身锁定与极速多开。`
+        : `Chromium ${chromium?.version || '155.0'}. Custom anti-detect build with isolated fingerprinting and GitHub Releases multi-kernel repository.`)
     : (isZh
-        ? '从云端一键下载 154.0 定制版防关联 Chromium 内核 (约 167MB)，下载后自动解压就绪。'
-        : 'Download the custom anti-detect Chromium build from cloud storage directly.')
+        ? '从 GitHub Releases 云端内核库一键下载 155.0 首发基准防关联 Chromium 原生内核，下载后自动解压就绪。'
+        : 'Download the custom anti-detect Chromium build from GitHub Releases kernel repository.')
 
   return (
     <section aria-label="Chromium kernel setup" className="panel">
@@ -91,6 +91,32 @@ export function ChromiumSetup() {
             </div>
           )}
           {failure && <p className="mt-2 break-words text-danger" role="alert">{failure}</p>}
+          {/* 多内核库就绪列表 */}
+          <div className="mt-4 rounded border border-line bg-canvas/40 p-3 text-xs">
+            <div className="flex items-center justify-between font-medium text-ink">
+              <span>{isZh ? '本地内核版本库 (多版本物理隔离)' : 'Local Kernel Repository (Isolated)'}</span>
+              <span className="font-mono text-[11px] text-signal">{isZh ? '云端源: GitHub Releases (免费全球CDN+镜像加速)' : 'Cloud: GitHub Releases'}</span>
+            </div>
+            <div className="mt-2 space-y-1.5 font-mono text-[11px]">
+              <div className="flex items-center justify-between rounded bg-canvas-subtle px-2.5 py-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+                  <span className="font-semibold text-ink">Chrome 155.0.8059.39</span>
+                  <span className="rounded bg-ok/10 px-1.5 py-0.5 text-[10px] text-ok font-sans font-medium">{isZh ? '首发基准 · 已激活' : 'Active Baseline'}</span>
+                </div>
+                <span className="text-ink-dim font-sans">{isZh ? '新老环境终身锁定' : 'Profile Locked'}</span>
+              </div>
+              <div className="flex items-center justify-between rounded bg-canvas-subtle px-2.5 py-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-ok" />
+                  <span className="font-semibold text-ink">Camoufox 135.0-beta.36</span>
+                  <span className="rounded bg-ok/10 px-1.5 py-0.5 text-[10px] text-ok font-sans font-medium">{isZh ? 'Gecko 原生 · 已激活' : 'Gecko Native'}</span>
+                </div>
+                <span className="text-ink-dim font-sans">{isZh ? '桌面真实生态绑定' : 'Desktop Only'}</span>
+              </div>
+            </div>
+          </div>
+
           <div className="mt-3 flex flex-wrap gap-2">
             {!ready && (
               <button

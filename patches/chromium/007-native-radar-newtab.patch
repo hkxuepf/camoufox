@@ -1,8 +1,8 @@
 diff --git a/chrome/browser/resources/new_tab_page/new_tab_page.html b/chrome/browser/resources/new_tab_page/new_tab_page.html
-index 6c1e975f9d..ff7a60f6fc 100644
+index 6c1e975f9d..d7fb39ad21 100644
 --- a/chrome/browser/resources/new_tab_page/new_tab_page.html
 +++ b/chrome/browser/resources/new_tab_page/new_tab_page.html
-@@ -1,35 +1,468 @@
+@@ -1,35 +1,499 @@
  <!doctype html>
 -<html dir="$i18n{textdirection}" lang="$i18n{language}" $i18n{roundedIconsAttribute} $i18n{webuiRoundedIconsAttribute}>
 -  <head>
@@ -12,6 +12,31 @@ index 6c1e975f9d..ff7a60f6fc 100644
 -      body {
 -        background: $i18n{backgroundColor};
 -        margin: 0;
+-      }
+-
+-      #backgroundImage {
+-        border: none;
+-        height: 100%;
+-        pointer-events: none;
+-        position: fixed;
+-        top: 0;
+-        visibility: hidden;
+-        width: 100%;
+-      }
+-
+-      [show-background-image] #backgroundImage {
+-        visibility: visible;
+-      }
+-    </style>
+-  </head>
+-  <body>
+-    <iframe id="backgroundImage" src="$i18nRaw{backgroundImageUrl}"></iframe>
+-    <ntp-app></ntp-app>
+-    <script type="module" src="new_tab_page.js"></script>
+-    <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
+-    <link rel="stylesheet" href="chrome://theme/colors.css?sets=ui,chrome">
+-    <link rel="stylesheet" href="shared_vars.css">
+-  </body>
 +<html dir="$i18n{textdirection}" lang="$i18n{language}">
 +<head>
 +  <meta charset="utf-8">
@@ -280,11 +305,16 @@ index 6c1e975f9d..ff7a60f6fc 100644
 +
 +    /* Docks */
 +    .dock-grid {
-+      display: grid;
-+      grid-template-columns: repeat(6, 1fr);
-+      gap: 10px;
++      display: flex;
++      flex-wrap: wrap;
++      justify-content: center;
++      gap: 8px;
 +    }
 +    .dock-item {
++      flex: 1 1 calc(33.33% - 8px);
++      min-width: 75px;
++      max-width: 110px;
++      box-sizing: border-box;
 +      display: flex;
 +      flex-direction: column;
 +      align-items: center;
@@ -403,21 +433,13 @@ index 6c1e975f9d..ff7a60f6fc 100644
 +      } else {
 +        const s = parseInt(mode, 10) / 100;
 +        vp.style.transform = 'scale(' + s + ')';
-       }
++      }
 +    }
 +
 +    window.addEventListener('resize', () => {
 +      if (currentMode === 'fit') setViewportScale('fit');
 +    });
- 
--      #backgroundImage {
--        border: none;
--        height: 100%;
--        pointer-events: none;
--        position: fixed;
--        top: 0;
--        visibility: hidden;
--        width: 100%;
++
 +    function handleSearch(e) {
 +      if (e.key === 'Enter') {
 +        const q = e.target.value.trim();
@@ -429,56 +451,71 @@ index 6c1e975f9d..ff7a60f6fc 100644
 +        } else {
 +          window.location.href = 'https://www.google.com/search?q=' + encodeURIComponent(q);
 +        }
-       }
++      }
 +    }
- 
--      [show-background-image] #backgroundImage {
--        visibility: visible;
-+    async function refreshAll() {
-+      // 探查 IP
-+      try {
-+        const res = await fetch('https://api.ipify.org?format=json');
-+        const data = await res.json();
-+        if (data.ip) {
-+          document.getElementById('ipDisplay').innerText = data.ip;
++
++    // Trusted-Types-safe DOM update helpers
++    function setSafeLines(id, lines) {
++      const el = document.getElementById(id);
++      if (!el) return;
++      while (el.firstChild) el.removeChild(el.firstChild);
++      lines.forEach((line, idx) => {
++        if (idx > 0) el.appendChild(document.createElement('br'));
++        el.appendChild(document.createTextNode(line));
++      });
++    }
++
++    function setBadgeVal(id, val) {
++      const el = document.getElementById(id);
++      if (!el) return;
++      const valSpan = el.querySelector('.val');
++      if (valSpan) {
++        valSpan.textContent = val;
++      }
++    }
++
++    window.updateRadarData = function(data) {
++      if (!data) return;
++      if (data.envTitle) {
++        const t = document.getElementById('envTitle');
++        if (t) t.textContent = data.envTitle;
++      }
++      if (data.ip) {
++        const ipEl = document.getElementById('ipDisplay');
++        if (ipEl) ipEl.textContent = data.ip;
++      }
++      if (data.country || data.city || data.region) {
++        setSafeLines('geoDisplay', [
++          '国家/地区: ' + (data.country || '探查中...'),
++          '州/省: ' + (data.region || '--') + ', 城市: ' + (data.city || '--')
++        ]);
++      }
++      if (data.targetW && data.targetH) {
++        targetW = data.targetW;
++        targetH = data.targetH;
++        const vp = document.getElementById('sandboxViewport');
++        if (vp) {
++          vp.style.width = targetW + 'px';
++          vp.style.minHeight = targetH + 'px';
 +        }
-+      } catch(e) {
-+        document.getElementById('ipDisplay').innerText = '127.0.0.1 (本地直连)';
-       }
--    </style>
--  </head>
--  <body>
--    <iframe id="backgroundImage" src="$i18nRaw{backgroundImageUrl}"></iframe>
--    <ntp-app></ntp-app>
--    <script type="module" src="new_tab_page.js"></script>
--    <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
--    <link rel="stylesheet" href="chrome://theme/colors.css?sets=ui,chrome">
--    <link rel="stylesheet" href="shared_vars.css">
--  </body>
-+
-+      // 测试各站点测速
-+      const tests = [
-+        { id: 'pingTikTok', url: 'https://www.tiktok.com/favicon.ico', name: 'TikTok' },
-+        { id: 'pingGoogle', url: 'https://www.google.com/favicon.ico', name: 'Google' },
-+        { id: 'pingBaidu', url: 'https://www.baidu.com/favicon.ico', name: 'Baidu' },
-+        { id: 'pingFacebook', url: 'https://www.facebook.com/favicon.ico', name: 'Facebook' },
-+        { id: 'pingIphey', url: 'https://iphey.com/favicon.ico', name: 'Iphey' }
-+      ];
-+
-+      for (const t of tests) {
-+        const start = performance.now();
-+        try {
-+          await fetch(t.url, { mode: 'no-cors', cache: 'no-cache' });
-+          const latency = Math.round(performance.now() - start);
-+          const el = document.getElementById(t.id);
-+          if (el) el.innerHTML = '<span>' + t.name + '</span> <span class="val">✓ ' + latency + 'ms</span>';
-+        } catch(e) {
-+          const el = document.getElementById(t.id);
-+          if (el) el.innerHTML = '<span>' + t.name + '</span> <span class="val">✓ 正常</span>';
++        setSafeLines('hwDisplay', [
++          '内核: Chromium 155',
++          '物理分辨率: ' + targetW + ' × ' + targetH + ' (受控物理沙盒视口)'
++        ]);
++        setViewportScale(currentMode);
++      }
++      if (data.pings) {
++        for (const [k, v] of Object.entries(data.pings)) {
++          setBadgeVal('ping' + k, '✓ ' + v);
 +        }
 +      }
++    };
 +
-+      // 填充硬件与屏幕信息
++    function refreshAll() {
++      const ipEl = document.getElementById('ipDisplay');
++      if (ipEl && ipEl.textContent === '探查中...') {
++        ipEl.textContent = '检测连接中...';
++      }
 +      const w = window.screen.width || window.innerWidth;
 +      const h = window.screen.height || window.innerHeight;
 +      targetW = w > 600 ? w : 1024;
@@ -488,8 +525,12 @@ index 6c1e975f9d..ff7a60f6fc 100644
 +        vp.style.width = targetW + 'px';
 +        vp.style.minHeight = targetH + 'px';
 +      }
-+      document.getElementById('hwDisplay').innerHTML = '操作系统: ' + navigator.platform + '<br>物理分辨率: ' + targetW + ' × ' + targetH + '<br>核心数: ' + (navigator.hardwareConcurrency || 8) + ' 核心, 内存: ' + (navigator.deviceMemory || 8) + ' GB';
-+      setViewportScale('fit');
++      setSafeLines('hwDisplay', [
++        '操作系统: ' + (navigator.platform || 'Windows'),
++        '物理分辨率: ' + targetW + ' × ' + targetH,
++        '核心数: ' + (navigator.hardwareConcurrency || 8) + ' 核心, 内存: ' + (navigator.deviceMemory || 8) + ' GB'
++      ]);
++      setViewportScale(currentMode);
 +    }
 +
 +    window.addEventListener('DOMContentLoaded', () => {

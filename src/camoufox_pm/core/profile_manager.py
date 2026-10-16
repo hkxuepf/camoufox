@@ -928,8 +928,29 @@ class ProfileManager:
                 }
 
             profile.storage_path = str(profile_data_path(self, profile))
+
+            # Auto-Pull: If local profile directory is missing or empty, auto-pull latest snapshot from Cloudflare R2
+            pdir = Path(profile.storage_path)
+            if getattr(profile, "cloud_sync_enabled", True):
+                should_pull = not pdir.exists() or not any(pdir.iterdir())
+                if should_pull:
+                    try:
+                        from .cloud_sync import auto_pull_profile_snapshot, check_cloud_snapshot_exists
+                        if await check_cloud_snapshot_exists(profile_id):
+                            logger.info(f"Local storage absent for profile {profile_id}, auto-pulling from cloud roaming...")
+                            await auto_pull_profile_snapshot(profile_id, pdir, pm=self)
+                    except Exception as pull_err:
+                        logger.warning(f"Auto-pull non-blocking warning for {profile_id}: {pull_err}")
+
             engine = profile.browser_settings.browser_engine
             if engine == "chromium":
+                from .kernel_manager import kernel_manager
+                k_ver = getattr(profile.browser_settings, "kernel_version", None)
+                if k_ver:
+                    try:
+                        await kernel_manager.ensure_kernel_ready("chromium", k_ver)
+                    except Exception as k_err:
+                        logger.warning(f"Failed to ensure kernel {k_ver} ready: {k_err}")
                 options = profile.to_chromium_launch_options()
                 options["headless"] = headless
                 if window_size:
@@ -963,7 +984,13 @@ class ProfileManager:
                     if pinned:
                         profile.fingerprint = pinned
                 if pinned:
-                    options["config"] = {**pinned, **options.get("config", {})}
+                    current_cfg = options.get("config", {})
+                    merged = {**current_cfg, **pinned}
+                    if profile.browser_settings and profile.browser_settings.hardware_concurrency:
+                        merged["navigator.hardwareConcurrency"] = profile.browser_settings.hardware_concurrency
+                    if profile.browser_settings and profile.browser_settings.timezone:
+                        merged["timezone"] = profile.browser_settings.timezone
+                    options["config"] = merged
                 if not profile.browser_settings.fonts and "config" in options:
                     options["config"].pop("fonts", None)
                 if sys.platform == "darwin" and "config" in options:
@@ -999,9 +1026,17 @@ class ProfileManager:
                 bs_settings = options.get("browser_settings", {})
                 await proxy_check.auto_align_proxy_location(profile.proxy, bs_settings)
 
-            session = await self.browser_sessions.launch(
-                profile_id, options, on_exit=self._on_browser_exit, engine=engine
-            )
+            options["engine"] = engine
+            import inspect
+            sig = inspect.signature(self.browser_sessions.launch)
+            if "engine" in sig.parameters:
+                session = await self.browser_sessions.launch(
+                    profile_id, options, on_exit=self._on_browser_exit, engine=engine
+                )
+            else:
+                session = await self.browser_sessions.launch(
+                    profile_id, options, on_exit=self._on_browser_exit
+                )
         except (Exception, asyncio.CancelledError):
             # CancelledError is a BaseException, not an Exception: an HTTP client
             # that disconnects mid-launch cancels this coroutine, and a lease must
@@ -1016,6 +1051,17 @@ class ProfileManager:
             if not self.browser_sessions.is_live(profile_id):
                 await self._release_lease_quietly(profile_id)
             raise
+
+        try:
+            from .event_bus import event_bus
+            await event_bus.broadcast("PROFILE_STATUS_CHANGED", {
+                "profile_id": profile_id,
+                "status": "running",
+                "is_running": True,
+            })
+        except Exception:
+            pass
+
         return {
             "status": "launched",
             "profile_id": profile_id,
@@ -1025,14 +1071,42 @@ class ProfileManager:
             "camoufox_options": {"process_id": session.process_id, "options": options},
         }
 
+    async def _trigger_auto_cloud_sync(self, profile_id: str) -> None:
+        """Trigger background snapshot upload to Cloudflare R2 on browser exit."""
+        try:
+            profile = await self.get_profile(profile_id)
+            if not profile or not getattr(profile, "cloud_sync_enabled", True):
+                return
+            pdir = Path(profile.storage_path or profile_data_path(self, profile))
+            if not pdir.exists():
+                return
+            from .cloud_sync import auto_push_profile_snapshot
+            logger.info(f"Auto-Push: Initiating cloud roaming snapshot upload for profile {profile_id}...")
+            await auto_push_profile_snapshot(profile_id, pdir, profile.model_dump(), pm=self)
+        except Exception as exc:
+            logger.warning(f"Background auto cloud sync failed for {profile_id}: {exc}")
+
     async def _on_browser_exit(self, profile_id: str) -> None:
-        """Record usage when a browser exits on its own (e.g. the user closes it)."""
+        """Record usage and trigger cloud roaming push when a browser exits."""
         try:
             await self.storage.log_usage(
                 UsageStats(profile_id=profile_id, action="close_browser", details={"forced": False})
             )
         except Exception as exc:  # noqa: BLE001 - logging must never break teardown
             logger.warning(f"Failed to log browser exit for {profile_id}: {exc}")
+
+        # Automatically push session snapshot (Cookies, LocalStorage, Preferences) to R2
+        asyncio.create_task(self._trigger_auto_cloud_sync(profile_id))
+
+        try:
+            from .event_bus import event_bus
+            await event_bus.broadcast("PROFILE_STATUS_CHANGED", {
+                "profile_id": profile_id,
+                "status": "ready",
+                "is_running": False,
+            })
+        except Exception:
+            pass
 
     async def close_browser(self, profile_id: str) -> dict[str, Any]:
         """Close the browser running for a profile, and hand its lease back."""
@@ -1046,6 +1120,17 @@ class ProfileManager:
         await self.storage.log_usage(
             UsageStats(profile_id=profile_id, action="close_browser", details={"forced": True})
         )
+
+        try:
+            from .event_bus import event_bus
+            await event_bus.broadcast("PROFILE_STATUS_CHANGED", {
+                "profile_id": profile_id,
+                "status": "ready",
+                "is_running": False,
+            })
+        except Exception:
+            pass
+
         return {
             "status": "closed",
             "profile_id": profile_id,

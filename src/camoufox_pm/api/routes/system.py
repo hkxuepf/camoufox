@@ -298,3 +298,109 @@ async def generate_ua(os: str = "windows", major: int | None = None):
         data={"user_agent": ua, "kernel_major": major or kernel_manager.get_active_kernel_major()},
     )
 
+
+@router.get(
+    "/system/client/check-update",
+    summary="Check for desktop client application updates.",
+    description="Compare client version and return platform-specific download asset URLs.",
+)
+async def check_client_update(
+    platform: str = "mac_arm64",
+    current_version: str = "1.0.0",
+):
+    """Check for latest desktop client release and match platform URL."""
+    storage = get_storage_manager()
+    latest = await storage.get_latest_client_release()
+    if not latest:
+        return ApiResponse(
+            success=True,
+            data={
+                "has_update": False,
+                "current_version": current_version,
+                "latest_version": current_version,
+            },
+        )
+
+    # Simple semver comparison helper
+    def parse_ver(v_str: str) -> tuple[int, ...]:
+        clean = re.sub(r"[^\d.]", "", v_str.lstrip("vV"))
+        parts = [int(p) for p in clean.split(".") if p.isdigit()]
+        return tuple(parts) if parts else (0,)
+
+    latest_ver = latest.get("version", "1.0.0")
+    has_update = parse_ver(latest_ver) > parse_ver(current_version)
+
+    # Pick appropriate download URL for platform
+    norm_plat = platform.lower().replace("-", "_")
+    dl_url = None
+    if "win" in norm_plat:
+        dl_url = latest.get("win_x64_url")
+    elif "arm" in norm_plat or "m1" in norm_plat or "m2" in norm_plat or "m3" in norm_plat:
+        dl_url = latest.get("mac_arm64_url") or latest.get("mac_x64_url")
+    else:
+        dl_url = latest.get("mac_x64_url") or latest.get("mac_arm64_url")
+
+    # Generate accelerated mirror URL if hosted on GitHub
+    mirror_url = f"https://ghproxy.net/{dl_url}" if dl_url and "github.com" in dl_url else dl_url
+
+    min_ver = latest.get("min_version", "1.0.0")
+    is_force = bool(latest.get("is_force_update", False)) or (parse_ver(current_version) < parse_ver(min_ver))
+
+    return ApiResponse(
+        success=True,
+        data={
+            "has_update": has_update,
+            "current_version": current_version,
+            "latest_version": latest_ver,
+            "title": latest.get("title", f"CamouHub {latest_ver}"),
+            "changelog": latest.get("changelog", ""),
+            "changelog_en": latest.get("changelog_en", ""),
+            "is_force_update": is_force,
+            "download_url": dl_url,
+            "download_mirror_url": mirror_url,
+            "published_at": latest.get("created_at"),
+        },
+    )
+
+
+@router.get(
+    "/system/kernels/manifest",
+    summary="Get multi-engine browser kernel cloud repository manifest.",
+    description="List available anti-detect kernels with platform-specific download URLs and mirror acceleration.",
+)
+async def get_kernels_manifest(platform: str = "mac_arm64"):
+    """Return available anti-detect browser kernels for given operating system platform."""
+    storage = get_storage_manager()
+    kernels = await storage.list_kernel_releases(active_only=True)
+    norm_plat = platform.lower().replace("-", "_")
+
+    manifest = []
+    for k in kernels:
+        if "win" in norm_plat:
+            url = k.get("win_x64_url")
+            sha256 = k.get("win_x64_sha256")
+        elif "arm" in norm_plat:
+            url = k.get("mac_arm64_url") or k.get("mac_x64_url")
+            sha256 = k.get("mac_arm64_sha256") or k.get("mac_x64_sha256")
+        else:
+            url = k.get("mac_x64_url") or k.get("mac_arm64_url")
+            sha256 = k.get("mac_x64_sha256") or k.get("mac_arm64_sha256")
+
+        mirror_url = f"https://ghproxy.net/{url}" if url and "github.com" in url else url
+
+        manifest.append({
+            "id": k["id"],
+            "engine": k["engine"],
+            "version": k["version"],
+            "display_name": k.get("display_name"),
+            "changelog": k.get("changelog"),
+            "is_recommended": bool(k.get("is_recommended", False)),
+            "platform": platform,
+            "download_url": url,
+            "download_mirror_url": mirror_url,
+            "sha256": sha256,
+        })
+
+    return ApiResponse(success=True, data=manifest)
+
+

@@ -106,9 +106,12 @@ class ChromiumInstaller:
 
             exe = self._find_installed_executable()
             if exe and Path(exe).is_file():
+                from .kernel_manager import kernel_manager
+                k_info = kernel_manager.detect_binary_version(exe)
+                detected_ver = f"{k_info.version} (Anti-detect)" if k_info else "155.0.8059.39 (Anti-detect)"
                 return ChromiumStatus(
                     installed=True,
-                    version="154.0.8037.97 (Anti-detect)",
+                    version=detected_ver,
                     state="ready",
                     progress=100,
                     message="Chromium 浏览器内核已就绪",

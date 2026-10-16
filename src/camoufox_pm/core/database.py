@@ -4,7 +4,7 @@ SQLite storage layer for the Camoufox profile management system.
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from loguru import logger
@@ -128,7 +128,7 @@ class DatabaseManager:
                     continue
                 self._connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}")
                 logger.info(f"Migrated {table}: added column {name}")
-        
+
         # 确保现有管理员账号获得超管权限
         self._connection.execute("UPDATE users SET role = 'admin', max_profiles = 99999, max_concurrent = 999 WHERE username IN ('admin', 'fgwl')")
         self._connection.commit()
@@ -172,6 +172,11 @@ class DatabaseManager:
             ("account", "TEXT"),
             ("is_favorite", "INTEGER DEFAULT 0"),
             ("tags", "TEXT DEFAULT '[]'"),
+            ("kernel_version", "TEXT DEFAULT '155.0.8059'"),
+            ("sync_status", "TEXT DEFAULT 'synced'"),
+            ("last_synced_at", "TIMESTAMP"),
+            ("sync_size_kb", "REAL"),
+            ("cloud_sync_enabled", "INTEGER DEFAULT 1"),
         ]:
             try:
                 self._connection.execute(f"ALTER TABLE profiles ADD COLUMN {col} {col_type};")
@@ -368,15 +373,78 @@ class DatabaseManager:
                 item["crx_id"],
             ))
 
-        # Default payment gateway settings
+        # Client releases for desktop application update management
         self._connection.execute("""
-            INSERT OR IGNORE INTO admin_settings (key, value)
-            VALUES 
-                ('usdt_wallet_address', 'TYDnyQfxxxxxxxSAMPLEWALLETaddress'),
-                ('usdt_network', 'TRC20'),
-                ('payment_gateway_url', ''),
-                ('payment_gateway_secret', '')
+            CREATE TABLE IF NOT EXISTS client_releases (
+                id TEXT PRIMARY KEY,
+                version TEXT NOT NULL UNIQUE,
+                title TEXT,
+                changelog TEXT,
+                changelog_en TEXT,
+                min_version TEXT DEFAULT '1.0.0',
+                is_force_update BOOLEAN DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                mac_arm64_url TEXT,
+                mac_x64_url TEXT,
+                win_x64_url TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
         """)
+
+        # Kernel releases for multi-engine anti-detect kernel cloud repository
+        self._connection.execute("""
+            CREATE TABLE IF NOT EXISTS kernel_releases (
+                id TEXT PRIMARY KEY,
+                engine TEXT NOT NULL,
+                version TEXT NOT NULL UNIQUE,
+                display_name TEXT,
+                changelog TEXT,
+                is_recommended BOOLEAN DEFAULT 0,
+                is_active BOOLEAN DEFAULT 1,
+                mac_arm64_url TEXT,
+                mac_arm64_sha256 TEXT,
+                mac_x64_url TEXT,
+                mac_x64_sha256 TEXT,
+                win_x64_url TEXT,
+                win_x64_sha256 TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Seed default kernel releases (Chrome 155 and Camoufox 135)
+        self._connection.execute("""
+            INSERT OR IGNORE INTO kernel_releases (
+                id, engine, version, display_name, changelog, is_recommended, is_active,
+                mac_arm64_url, win_x64_url
+            ) VALUES 
+            (
+                'kr_chrom_155', 'chromium', '155.0.8059', 'Chrome 155 (首发基准原生防关联内核)',
+                '原生集成 Canvas/WebGL 抗指纹与移动端视口沙盒锁，修复 CDP 内存泄漏', 1, 1,
+                'https://github.com/hkxuepf/camoufox/releases/download/v155.0/chromium-155.0.8059-mac-arm64.tar.gz',
+                'https://github.com/hkxuepf/camoufox/releases/download/v155.0/chromium-155.0.8059-win-x64.zip'
+            ),
+            (
+                'kr_fox_135', 'camoufox', '135.0-beta.36', 'Camoufox 135 (Gecko 原生防关联内核)',
+                '基于 Firefox 135 ESR 真实渲染引擎，完美支持桌面指纹仿真', 1, 1,
+                'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-mac-arm64.tar.gz',
+                'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-win-x64.zip'
+            )
+        """)
+
+        # Profile snapshots table (时光机与快照历史)
+        self._connection.execute("""
+            CREATE TABLE IF NOT EXISTS profile_snapshots (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                snapshot_name TEXT,
+                size_kb REAL,
+                r2_key TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self._connection.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_profile ON profile_snapshots(profile_id)")
 
         self._connection.commit()
 
@@ -546,6 +614,32 @@ class DatabaseManager:
                 profile_id,
             ),
         )
+        self._connection.commit()
+
+    async def set_cloud_sync_status(
+        self,
+        profile_id: str,
+        sync_status: str,
+        size_kb: float | None = None,
+        last_synced_at: datetime | None = None,
+    ) -> None:
+        """Update cloud sync status, size and timestamp without bumping row_version."""
+        now = (last_synced_at or datetime.now()).isoformat() if sync_status == "synced" else None
+        if size_kb is not None and now is not None:
+            self._connection.execute(
+                "UPDATE profiles SET sync_status = ?, sync_size_kb = ?, last_synced_at = ? WHERE id = ?",
+                (sync_status, size_kb, now, profile_id),
+            )
+        elif sync_status == "syncing":
+            self._connection.execute(
+                "UPDATE profiles SET sync_status = ? WHERE id = ?",
+                (sync_status, profile_id),
+            )
+        else:
+            self._connection.execute(
+                "UPDATE profiles SET sync_status = ? WHERE id = ?",
+                (sync_status, profile_id),
+            )
         self._connection.commit()
 
     async def delete_profile(self, profile_id: str) -> bool:
@@ -1485,7 +1579,188 @@ class DatabaseManager:
         self._connection.commit()
         return cursor.rowcount > 0
 
+    # --- Client & Kernel Releases Management ---
+
+    async def list_client_releases(self, active_only: bool = False) -> list[dict]:
+        query = "SELECT * FROM client_releases"
+        if active_only:
+            query += " WHERE is_active = 1"
+        query += " ORDER BY created_at DESC"
+        cursor = self._connection.execute(query)
+        return [dict(r) for r in cursor.fetchall()]
+
+    async def get_client_release(self, release_id: str) -> dict | None:
+        cursor = self._connection.execute("SELECT * FROM client_releases WHERE id = ? OR version = ?", (release_id, release_id))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def get_latest_client_release(self) -> dict | None:
+        cursor = self._connection.execute("SELECT * FROM client_releases WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def create_client_release(self, data: dict) -> dict:
+        r_id = data.get("id") or f"cr_{generate_short_id(8)}"
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO client_releases (
+                id, version, title, changelog, changelog_en, min_version,
+                is_force_update, is_active, mac_arm64_url, mac_x64_url, win_x64_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                r_id,
+                data["version"],
+                data.get("title", f"CamouHub {data['version']}"),
+                data.get("changelog", ""),
+                data.get("changelog_en", ""),
+                data.get("min_version", "1.0.0"),
+                int(bool(data.get("is_force_update", False))),
+                int(bool(data.get("is_active", True))),
+                data.get("mac_arm64_url"),
+                data.get("mac_x64_url"),
+                data.get("win_x64_url"),
+            ),
+        )
+        self._connection.commit()
+        return await self.get_client_release(r_id)
+
+    async def update_client_release(self, release_id: str, updates: dict) -> bool:
+        updates["updated_at"] = datetime.now().isoformat()
+        fields = [f"{k} = ?" for k in updates.keys()]
+        if not fields:
+            return False
+        params = list(updates.values()) + [release_id]
+        cursor = self._connection.execute(f"UPDATE client_releases SET {', '.join(fields)} WHERE id = ?", params)
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    async def delete_client_release(self, release_id: str) -> bool:
+        cursor = self._connection.execute("DELETE FROM client_releases WHERE id = ?", (release_id,))
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    async def list_kernel_releases(self, engine: str | None = None, active_only: bool = False) -> list[dict]:
+        clauses = []
+        params = []
+        if engine:
+            clauses.append("engine = ?")
+            params.append(engine)
+        if active_only:
+            clauses.append("is_active = 1")
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"SELECT * FROM kernel_releases{where} ORDER BY is_recommended DESC, created_at DESC"
+        cursor = self._connection.execute(query, params)
+        return [dict(r) for r in cursor.fetchall()]
+
+    async def get_kernel_release(self, release_id: str) -> dict | None:
+        cursor = self._connection.execute("SELECT * FROM kernel_releases WHERE id = ? OR version = ?", (release_id, release_id))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def create_kernel_release(self, data: dict) -> dict:
+        k_id = data.get("id") or f"kr_{generate_short_id(8)}"
+        self._connection.execute(
+            """
+            INSERT OR REPLACE INTO kernel_releases (
+                id, engine, version, display_name, changelog, is_recommended, is_active,
+                mac_arm64_url, mac_arm64_sha256, mac_x64_url, mac_x64_sha256,
+                win_x64_url, win_x64_sha256
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                k_id,
+                data.get("engine", "chromium"),
+                data["version"],
+                data.get("display_name", f"{data.get('engine', 'Chromium')} {data['version']}"),
+                data.get("changelog", ""),
+                int(bool(data.get("is_recommended", False))),
+                int(bool(data.get("is_active", True))),
+                data.get("mac_arm64_url"),
+                data.get("mac_arm64_sha256"),
+                data.get("mac_x64_url"),
+                data.get("mac_x64_sha256"),
+                data.get("win_x64_url"),
+                data.get("win_x64_sha256"),
+            ),
+        )
+        self._connection.commit()
+        return await self.get_kernel_release(k_id)
+
+    async def update_kernel_release(self, release_id: str, updates: dict) -> bool:
+        updates["updated_at"] = datetime.now().isoformat()
+        fields = [f"{k} = ?" for k in updates.keys()]
+        if not fields:
+            return False
+        params = list(updates.values()) + [release_id]
+        cursor = self._connection.execute(f"UPDATE kernel_releases SET {', '.join(fields)} WHERE id = ?", params)
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    async def delete_kernel_release(self, release_id: str) -> bool:
+        cursor = self._connection.execute("DELETE FROM kernel_releases WHERE id = ?", (release_id,))
+        self._connection.commit()
+        return cursor.rowcount > 0
+
+    # --- Profile Snapshots (时光机) ---
+
+    async def record_profile_snapshot(
+        self, profile_id: str, snapshot_name: str, size_kb: float, r2_key: str
+    ) -> dict:
+        import uuid
+        snapshot_id = f"snap_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc).isoformat()
+        self._connection.execute(
+            """
+            INSERT INTO profile_snapshots (id, profile_id, snapshot_name, size_kb, r2_key, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (snapshot_id, profile_id, snapshot_name, size_kb, r2_key, now),
+        )
+
+        # Enforce rolling retention: keep the newest 5 snapshots
+        cursor = self._connection.execute(
+            "SELECT id FROM profile_snapshots WHERE profile_id = ? ORDER BY created_at DESC",
+            (profile_id,),
+        )
+        all_snaps = cursor.fetchall()
+        if len(all_snaps) > 5:
+            for old in all_snaps[5:]:
+                self._connection.execute("DELETE FROM profile_snapshots WHERE id = ?", (old["id"],))
+
+        self._connection.commit()
+        return {
+            "id": snapshot_id,
+            "profile_id": profile_id,
+            "snapshot_name": snapshot_name,
+            "size_kb": size_kb,
+            "r2_key": r2_key,
+            "created_at": now,
+        }
+
+    async def list_profile_snapshots(self, profile_id: str) -> list[dict]:
+        cursor = self._connection.execute(
+            "SELECT * FROM profile_snapshots WHERE profile_id = ? ORDER BY created_at DESC",
+            (profile_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    async def get_profile_snapshot(self, snapshot_id: str) -> dict | None:
+        cursor = self._connection.execute(
+            "SELECT * FROM profile_snapshots WHERE id = ?", (snapshot_id,)
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    async def delete_profile_snapshot(self, snapshot_id: str) -> bool:
+        cursor = self._connection.execute(
+            "DELETE FROM profile_snapshots WHERE id = ?", (snapshot_id,)
+        )
+        self._connection.commit()
+        return cursor.rowcount > 0
+
     # --- Utilities ---
+
 
     def _row_to_schedule(self, row) -> Schedule:
         """Convert a database row into a Schedule object."""
@@ -1562,6 +1837,10 @@ class DatabaseManager:
             account=row["account"] if "account" in keys else None,
             is_favorite=bool(row["is_favorite"]) if "is_favorite" in keys and row["is_favorite"] else False,
             tags=json.loads(row["tags"]) if "tags" in keys and row["tags"] else [],
+            sync_status=row["sync_status"] if "sync_status" in keys and row["sync_status"] else "synced",
+            last_synced_at=datetime.fromisoformat(row["last_synced_at"]) if "last_synced_at" in keys and row["last_synced_at"] else None,
+            sync_size_kb=float(row["sync_size_kb"]) if "sync_size_kb" in keys and row["sync_size_kb"] is not None else None,
+            cloud_sync_enabled=bool(row["cloud_sync_enabled"]) if "cloud_sync_enabled" in keys and row["cloud_sync_enabled"] is not None else True,
         )
 
     async def close(self):
@@ -1573,15 +1852,36 @@ class DatabaseManager:
 
 
 class StorageManager:
-    """StorageManager backed by the SQLite database."""
+    """StorageManager with dual-engine support: SQLite WAL or PostgreSQL."""
 
     def __init__(self, db_path: str = "data/profiles.db"):
-        self.db = DatabaseManager(db_path)
-        logger.info(f"StorageManager initialized with database: {db_path}")
+        import os
+        self.db_path = db_path
+        database_url = os.environ.get("DATABASE_URL") or os.environ.get("CPM_DATABASE_URL")
+        target = database_url or db_path
+        if target.startswith("postgresql://") or target.startswith("postgres://"):
+            from .postgres_database import PostgresDatabaseManager
+            self.db = PostgresDatabaseManager(target)
+            logger.info("StorageManager initialized with Enterprise PostgreSQL backend")
+        else:
+            self.db = DatabaseManager(db_path)
+            logger.info(f"StorageManager initialized with SQLite database: {db_path}")
 
     async def initialize(self):
-        """Initialize the database."""
-        await self.db.initialize()
+        """Initialize the database with graceful SQLite fallback."""
+        try:
+            await self.db.initialize()
+        except Exception as exc:
+            if not isinstance(self.db, DatabaseManager):
+                logger.warning(
+                    f"PostgreSQL initialization failed ({exc}). Falling back to local SQLite WAL engine."
+                )
+                self.db = DatabaseManager(self.db_path)
+                await self.db.initialize()
+            else:
+                raise
+
+
 
     # Profile methods
     async def save_profile(self, profile: Profile, expected_row_version: int | None = None):
@@ -1600,6 +1900,15 @@ class StorageManager:
         self, profile_id: str, fingerprint: dict | None, last_used: datetime
     ) -> None:
         await self.db.set_launch_pin(profile_id, fingerprint, last_used)
+
+    async def set_cloud_sync_status(
+        self,
+        profile_id: str,
+        sync_status: str,
+        size_kb: float | None = None,
+        last_synced_at: datetime | None = None,
+    ) -> None:
+        await self.db.set_cloud_sync_status(profile_id, sync_status, size_kb, last_synced_at)
 
     async def delete_profile(self, profile_id: str) -> bool:
         return await self.db.delete_profile(profile_id)
@@ -1758,13 +2067,28 @@ class StorageManager:
     async def acquire_lease(
         self, profile_id: str, holder: str, ttl_seconds: int, include_deleted: bool = False
     ) -> bool:
+        from .redis_lease import get_redis_lease_manager
+        redis_mgr = get_redis_lease_manager()
+        if redis_mgr and redis_mgr.is_available:
+            ok = await redis_mgr.acquire_lease(profile_id, holder, ttl_seconds)
+            if not ok:
+                return False
         return await self.db.acquire_lease(profile_id, holder, ttl_seconds, include_deleted)
 
     async def renew_lease(self, profile_ids: list[str], holder: str, ttl_seconds: int) -> int:
+        from .redis_lease import get_redis_lease_manager
+        redis_mgr = get_redis_lease_manager()
+        if redis_mgr and redis_mgr.is_available:
+            await redis_mgr.renew_lease(profile_ids, holder, ttl_seconds)
         return await self.db.renew_lease(profile_ids, holder, ttl_seconds)
 
     async def release_lease(self, profile_id: str, holder: str) -> bool:
+        from .redis_lease import get_redis_lease_manager
+        redis_mgr = get_redis_lease_manager()
+        if redis_mgr and redis_mgr.is_available:
+            await redis_mgr.release_lease(profile_id, holder)
         return await self.db.release_lease(profile_id, holder)
+
 
     async def force_release_lease(self, profile_id: str) -> str | None:
         return await self.db.force_release_lease(profile_id)
@@ -1819,7 +2143,57 @@ class StorageManager:
     async def delete_extension(self, ext_id: str) -> bool:
         return await self.db.delete_extension(ext_id)
 
+    # Releases methods
+    async def list_client_releases(self, active_only: bool = False) -> list[dict]:
+        return await self.db.list_client_releases(active_only)
+
+    async def get_client_release(self, release_id: str) -> dict | None:
+        return await self.db.get_client_release(release_id)
+
+    async def get_latest_client_release(self) -> dict | None:
+        return await self.db.get_latest_client_release()
+
+    async def create_client_release(self, data: dict) -> dict:
+        return await self.db.create_client_release(data)
+
+    async def update_client_release(self, release_id: str, updates: dict) -> bool:
+        return await self.db.update_client_release(release_id, updates)
+
+    async def delete_client_release(self, release_id: str) -> bool:
+        return await self.db.delete_client_release(release_id)
+
+    async def list_kernel_releases(self, engine: str | None = None, active_only: bool = False) -> list[dict]:
+        return await self.db.list_kernel_releases(engine, active_only)
+
+    async def get_kernel_release(self, release_id: str) -> dict | None:
+        return await self.db.get_kernel_release(release_id)
+
+    async def create_kernel_release(self, data: dict) -> dict:
+        return await self.db.create_kernel_release(data)
+
+    async def update_kernel_release(self, release_id: str, updates: dict) -> bool:
+        return await self.db.update_kernel_release(release_id, updates)
+
+    async def delete_kernel_release(self, release_id: str) -> bool:
+        return await self.db.delete_kernel_release(release_id)
+
+    # Snapshot methods (时光机)
+    async def record_profile_snapshot(
+        self, profile_id: str, snapshot_name: str, size_kb: float, r2_key: str
+    ) -> dict:
+        return await self.db.record_profile_snapshot(profile_id, snapshot_name, size_kb, r2_key)
+
+    async def list_profile_snapshots(self, profile_id: str) -> list[dict]:
+        return await self.db.list_profile_snapshots(profile_id)
+
+    async def get_profile_snapshot(self, snapshot_id: str) -> dict | None:
+        return await self.db.get_profile_snapshot(snapshot_id)
+
+    async def delete_profile_snapshot(self, snapshot_id: str) -> bool:
+        return await self.db.delete_profile_snapshot(snapshot_id)
+
     async def close(self):
         """Close the database."""
         await self.db.close()
+
 

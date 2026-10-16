@@ -41,6 +41,8 @@ dependencies = [
     # socks so a SOCKS5 proxy can be checked, not only HTTP ones.
     "httpx[socks]>=0.28",
     "packaging>=24.1",
+    "redis>=8.1.0",
+    "asyncpg>=0.32.0",
 ]
 
 [project.optional-dependencies]

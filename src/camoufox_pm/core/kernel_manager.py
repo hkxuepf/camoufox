@@ -12,6 +12,9 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Literal
+from datetime import datetime
+import json
+import platform
 import random
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -26,6 +29,7 @@ class KernelInfo(BaseModel):
     major: int = Field(..., description="Major version number, e.g. 154")
     build: int = Field(8037, description="Build number, e.g. 8037")
     patch: int = Field(97, description="Patch number, e.g. 97")
+    flavor: Literal["camou_native", "cloak_stealth", "gecko_native"] = "camou_native"
     is_default: bool = Field(False, description="Whether this is the primary active kernel")
     executable_path: str = Field(..., description="Path to the executable binary")
     channel: Literal["stable", "beta", "dev"] = "stable"
@@ -60,15 +64,29 @@ class KernelManager:
 
     def __init__(self) -> None:
         self._cached_version_map: dict[str, KernelInfo] = {}
-        self._default_major: int = 154
+        self._default_major: int = 155
 
-    def get_kernels_root_dir(self) -> Path:
-        """Root directory where multi-version kernels are stored."""
-        settings = get_settings()
-        data_dir = Path(settings.db_path).resolve().parent
-        kernels_dir = data_dir / "bin" / "kernels"
+    def get_kernels_root_dir(self, engine: str = "chromium") -> Path:
+        """Root directory where multi-version kernels are stored (~/.camoufox/kernels/{engine})."""
+        kernels_dir = Path.home() / ".camoufox" / "kernels" / engine
         kernels_dir.mkdir(parents=True, exist_ok=True)
         return kernels_dir
+
+    def get_kernel_meta(self, executable_path: str) -> dict | None:
+        """Read .version_meta.json from kernel directory if present."""
+        try:
+            exe_p = Path(executable_path)
+            candidates = [
+                exe_p.parent / ".version_meta.json",
+                exe_p.parent.parent / ".version_meta.json",
+                exe_p.parent.parent.parent / ".version_meta.json",
+            ]
+            for cand in candidates:
+                if cand.is_file():
+                    return json.loads(cand.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return None
 
     def detect_binary_version(self, executable_path: str) -> KernelInfo | None:
         """Execute a Chromium binary with --version and parse its version string."""
@@ -87,18 +105,21 @@ class KernelManager:
                 timeout=5,
             )
             out = res.stdout.strip()
-            # Output format: Chromium 154.0.8037.97 or Google Chrome 154.0.8037.97
+            # Output format: Chromium 155.0.8059.39
             m = re.search(r"(\d+)\.(\d+)\.(\d+)\.(\d+)", out)
             if m:
                 major = int(m.group(1))
                 build = int(m.group(3))
                 patch = int(m.group(4))
+                meta = self.get_kernel_meta(executable_path)
+                flavor = meta.get("flavor") if meta else ("camou_native" if major >= 155 else "cloak_stealth")
                 info = KernelInfo(
                     version=m.group(0),
                     major=major,
                     build=build,
                     patch=patch,
-                    is_default=False,
+                    flavor=flavor,
+                    is_default=(major == 155),
                     executable_path=executable_path,
                 )
                 self._cached_version_map[executable_path] = info
@@ -106,13 +127,16 @@ class KernelManager:
         except Exception as exc:
             logger.warning(f"Failed to detect version for {executable_path}: {exc}")
 
-        # Fallback based on executable name or default 154
+        # Fallback based on executable name or default 155
+        meta = self.get_kernel_meta(executable_path)
+        flavor = meta.get("flavor") if meta else "camou_native"
         return KernelInfo(
-            version="154.0.8037.97",
-            major=154,
-            build=8037,
-            patch=97,
-            is_default=False,
+            version="155.0.8059.39",
+            major=155,
+            build=8059,
+            patch=39,
+            flavor=flavor,
+            is_default=True,
             executable_path=executable_path,
         )
 
@@ -121,7 +145,7 @@ class KernelManager:
         kernels: list[KernelInfo] = []
         seen_paths: set[str] = set()
 
-        # 1. Check primary/default Chromium in bin/Chromium.app
+        # 1. Check primary/default Chromium in bin/Chromium.app or launcher path
         from camoufox_pm.core.chromium_launcher import get_chromium_executable_path
         default_exe = get_chromium_executable_path()
         if default_exe and Path(default_exe).is_file():
@@ -129,15 +153,23 @@ class KernelManager:
             if info:
                 info.is_default = True
                 kernels.append(info)
-                seen_paths.add(default_exe)
+                seen_paths.add(str(Path(default_exe).resolve()))
                 self._default_major = info.major
 
-        # 2. Check multi-version kernel directory (bin/kernels/<version>/...)
-        kernels_root = self.get_kernels_root_dir()
-        if kernels_root.is_dir():
-            for item in kernels_root.iterdir():
+        # 2. Check multi-version kernel directories (~/.camoufox/kernels/chromium/ & ~/.camoufox/bin/kernels/)
+        scan_roots = [
+            self.get_kernels_root_dir("chromium"),
+            Path.home() / ".camoufox" / "bin" / "kernels",
+        ]
+        settings = get_settings()
+        data_dir = Path(settings.db_path).resolve().parent
+        scan_roots.append(data_dir / "bin" / "kernels")
+
+        for root in scan_roots:
+            if not root.is_dir():
+                continue
+            for item in root.iterdir():
                 if item.is_dir():
-                    # Look for Chromium executable inside version dir
                     candidates = [
                         item / "Contents" / "MacOS" / "Chromium",
                         item / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
@@ -146,11 +178,12 @@ class KernelManager:
                     ]
                     for cand in candidates:
                         cand_str = str(cand)
-                        if cand.is_file() and cand_str not in seen_paths:
+                        real_p = str(cand.resolve()) if cand.exists() else cand_str
+                        if cand.is_file() and real_p not in seen_paths:
                             info = self.detect_binary_version(cand_str)
                             if info:
                                 kernels.append(info)
-                                seen_paths.add(cand_str)
+                                seen_paths.add(real_p)
 
         # Sort by major version descending
         kernels.sort(key=lambda k: k.major, reverse=True)
@@ -194,6 +227,117 @@ class KernelManager:
                 return k.executable_path
 
         return kernels[0].executable_path
+
+    async def ensure_kernel_ready(self, engine: str = "chromium", version: str | None = None) -> str | None:
+        """Ensure the specified kernel is available locally, downloading lazily if missing."""
+        exe = self.get_executable_for_version(version)
+        if exe and Path(exe).is_file():
+            return exe
+
+        if not version:
+            return exe
+
+        logger.info(f"Kernel {engine} v{version} not found locally. Checking download channels...")
+        try:
+            from camoufox_pm.api.dependencies import get_storage_manager
+            storage = get_storage_manager()
+            kernels = await storage.list_kernel_releases(engine=engine, active_only=True)
+            matched = None
+            for k in kernels:
+                if k.get("version") == version or (version and str(version) in k.get("version", "")):
+                    matched = k
+                    break
+
+            if not matched and kernels:
+                matched = kernels[0]
+
+            if not matched:
+                return exe
+
+            plat = "mac_arm64" if sys.platform == "darwin" and platform.machine() == "arm64" else (
+                "mac_x64" if sys.platform == "darwin" else "win_x64"
+            )
+            download_url = matched.get(f"{plat}_url")
+            expected_sha = matched.get(f"{plat}_sha256")
+            if not download_url:
+                return exe
+
+            target_dir = self.get_kernels_root_dir(engine) / version
+            candidates = [
+                target_dir / "Contents" / "MacOS" / "Chromium",
+                target_dir / "Chromium.app" / "Contents" / "MacOS" / "Chromium",
+                target_dir / "chrome.exe",
+                target_dir / "firefox.exe",
+                target_dir / "firefox",
+            ]
+            for cand in candidates:
+                if cand.is_file():
+                    return str(cand)
+
+            unpack_dir = self.get_kernels_root_dir(engine) / f"{version}.unpacking"
+            if unpack_dir.exists():
+                shutil.rmtree(unpack_dir, ignore_errors=True)
+            unpack_dir.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Downloading kernel {version} from {download_url}...")
+            import urllib.request
+            tmp_archive = unpack_dir / ("kernel.tar.gz" if "tar.gz" in download_url else "kernel.zip")
+            urllib.request.urlretrieve(download_url, str(tmp_archive))
+
+            if expected_sha:
+                import hashlib
+                h = hashlib.sha256()
+                with open(tmp_archive, "rb") as f:
+                    while chunk := f.read(1024 * 1024):
+                        h.update(chunk)
+                if h.hexdigest().lower() != expected_sha.lower():
+                    shutil.rmtree(unpack_dir, ignore_errors=True)
+                    raise RuntimeError(f"Kernel download SHA256 mismatch for {version}")
+
+            if str(tmp_archive).endswith(".tar.gz"):
+                import tarfile
+                with tarfile.open(tmp_archive, "r:gz") as tar:
+                    tar.extractall(path=unpack_dir)
+            else:
+                import zipfile
+                with zipfile.ZipFile(tmp_archive, "r") as zf:
+                    zf.extractall(path=unpack_dir)
+            tmp_archive.unlink(missing_ok=True)
+
+            v_major = int(re.search(r'\d+', version).group()) if re.search(r'\d+', version) else 155
+            flavor = "camou_native" if (matched.get("flavor") == "camou_native" or v_major >= 155) else "cloak_stealth"
+            meta_json = {
+                "engine": engine,
+                "version": version,
+                "flavor": flavor,
+                "platform": plat,
+                "installed_at": datetime.now().isoformat(),
+                "is_ready": True,
+            }
+            (unpack_dir / ".version_meta.json").write_text(json.dumps(meta_json, indent=2), encoding="utf-8")
+
+            if sys.platform == "darwin":
+                try:
+                    subprocess.run(["xattr", "-rd", "com.apple.quarantine", str(unpack_dir)], check=False, capture_output=True)
+                except Exception:
+                    pass
+                for root_p, _, files in os.walk(unpack_dir):
+                    for fn in files:
+                        fp = Path(root_p) / fn
+                        if fn in ("Chromium", "chrome", "firefox"):
+                            fp.chmod(0o755)
+
+            if target_dir.exists():
+                shutil.rmtree(target_dir, ignore_errors=True)
+            unpack_dir.rename(target_dir)
+
+            for cand in candidates:
+                if cand.is_file():
+                    return str(cand)
+        except Exception as exc:
+            logger.warning(f"ensure_kernel_ready failed for {engine} {version}: {exc}")
+
+        return self.get_executable_for_version(version)
 
     def generate_jittered_ua(
         self,

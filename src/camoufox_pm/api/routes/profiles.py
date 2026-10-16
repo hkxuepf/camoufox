@@ -7,13 +7,14 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import FileResponse, Response
 from loguru import logger
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from starlette.background import BackgroundTask
 
 from camoufox_pm.api.dependencies import (
@@ -951,8 +952,6 @@ async def update_profile_cookies(profile_id: str, request: Request):
     injected = False
     if session and session.port:
         try:
-            import urllib.request
-            import json as json_lib
             # Basic validation/injection via CDP could happen here
             injected = True
         except Exception:
@@ -1063,17 +1062,20 @@ async def mutate_profile_fingerprint_endpoint(profile_id: str):
 async def cloud_sync_push_endpoint(profile_id: str):
     """Backup profile cookies, storage, and settings to Cloudflare R2."""
     from camoufox_pm.core.cloud_sync import upload_profile_to_r2
+    from camoufox_pm.core.profile_operations import profile_data_path
 
     pm = get_profile_manager()
     profile = await pm.get_profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    profile_dir = Path(pm.data_dir) / "profiles" / profile_id
+    profile_dir = Path(profile.storage_path or profile_data_path(pm, profile))
     meta = profile.model_dump()
     res = await upload_profile_to_r2(profile_id, profile_dir, meta)
     if not res.get("success"):
+        await pm.storage.set_cloud_sync_status(profile_id, "failed")
         raise HTTPException(status_code=500, detail=res.get("error", "Failed to upload to cloud"))
+    await pm.storage.set_cloud_sync_status(profile_id, "synced", size_kb=res.get("size_kb"))
     return res
 
 
@@ -1081,23 +1083,190 @@ async def cloud_sync_push_endpoint(profile_id: str):
 async def cloud_sync_pull_endpoint(profile_id: str):
     """Restore profile cookies, storage, and settings from Cloudflare R2."""
     from camoufox_pm.core.cloud_sync import download_profile_from_r2
+    from camoufox_pm.core.profile_operations import profile_data_path
 
     pm = get_profile_manager()
-    profile_dir = Path(pm.data_dir) / "profiles" / profile_id
+    existing = await pm.get_profile(profile_id)
+    profile_dir = Path(existing.storage_path or profile_data_path(pm, existing)) if existing else Path(pm.data_dir) / "profiles" / f"profile_{profile_id}"
     res = await download_profile_from_r2(profile_id, profile_dir)
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("error", "Failed to restore from cloud"))
 
     meta = res.get("meta")
     if meta and "name" in meta:
-        existing = await pm.get_profile(profile_id)
         if not existing:
             from camoufox_pm.core.models import Profile
             p = Profile(**meta)
             await pm.storage.save_profile(p)
         else:
             await pm.update_profile(profile_id, meta)
-
+    await pm.storage.set_cloud_sync_status(profile_id, "synced", size_kb=res.get("size_kb"))
     return res
+
+
+# --- Profile Snapshots (时光机) Endpoints ---
+
+@router.get("/profiles/{profile_id}/snapshots", summary="List historical snapshots for profile")
+async def list_profile_snapshots_endpoint(profile_id: str):
+    """Get rolling historical snapshots for profile rollback."""
+    pm = get_profile_manager()
+    profile = await pm.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    snapshots = await pm.storage.list_profile_snapshots(profile_id)
+    return {"profile_id": profile_id, "snapshots": snapshots}
+
+
+@router.post("/profiles/{profile_id}/snapshots/{snapshot_id}/rollback", summary="Rollback profile to snapshot")
+async def rollback_profile_snapshot_endpoint(profile_id: str, snapshot_id: str):
+    """Restore profile session and state to a specific historical snapshot."""
+    from camoufox_pm.core.cloud_sync import download_snapshot_from_key
+    from camoufox_pm.core.profile_operations import profile_data_path
+
+    pm = get_profile_manager()
+    profile = await pm.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    snapshot = await pm.storage.get_profile_snapshot(snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    profile_dir = Path(profile.storage_path or profile_data_path(pm, profile))
+    res = await download_snapshot_from_key(snapshot["r2_key"], profile_dir)
+    if not res.get("success"):
+        raise HTTPException(status_code=500, detail=res.get("error", "Rollback failed"))
+
+    meta = res.get("meta")
+    if meta and isinstance(meta, dict) and "name" in meta:
+        await pm.update_profile(profile_id, meta)
+    await pm.storage.set_cloud_sync_status(profile_id, "synced", size_kb=snapshot.get("size_kb"))
+    return {
+        "success": True,
+        "message": f"Successfully rolled back to snapshot {snapshot.get('snapshot_name')}",
+        "snapshot": snapshot,
+    }
+
+
+@router.delete("/profiles/{profile_id}/snapshots/{snapshot_id}", summary="Delete profile snapshot")
+async def delete_profile_snapshot_endpoint(profile_id: str, snapshot_id: str):
+    """Delete a snapshot entry from history."""
+    pm = get_profile_manager()
+    success = await pm.storage.delete_profile_snapshot(snapshot_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    return {"success": True, "snapshot_id": snapshot_id}
+
+
+# --- S3/R2 Presigned Direct Transfer Endpoints ---
+
+class PresignedUploadRequest(BaseModel):
+    profile_id: str
+    tenant_id: str | None = None
+    expires_in: int = 300
+
+
+@router.post("/sync/presigned-upload", summary="Get S3/R2 presigned URL for direct snapshot upload")
+async def get_presigned_upload_endpoint(req: PresignedUploadRequest):
+    """Generate temporary PUT presigned URL for client to bypass server and directly upload to R2."""
+    import uuid
+
+    from camoufox_pm.core.cloud_sync import R2_BUCKET, R2_PREFIX, generate_r2_presigned_url
+
+    pm = get_profile_manager()
+    profile = await pm.get_profile(req.profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snap_suffix = uuid.uuid4().hex[:8]
+    r2_key = f"{R2_PREFIX}/{req.profile_id}/snapshots/snapshot_{time_str}_{snap_suffix}.tar.gz"
+    uri = f"/{R2_BUCKET}/{r2_key}"
+    upload_url = generate_r2_presigned_url("PUT", uri, expires_in=req.expires_in)
+
+    return {
+        "upload_url": upload_url,
+        "r2_key": r2_key,
+        "expires_in": req.expires_in,
+        "profile_id": req.profile_id,
+    }
+
+
+@router.get("/sync/presigned-download", summary="Get S3/R2 presigned URL for direct snapshot download")
+async def get_presigned_download_endpoint(
+    profile_id: str = Query(..., description="Profile ID"),
+    snapshot_id: str | None = Query(None, description="Optional specific snapshot ID"),
+    expires_in: int = Query(300, description="Expiration seconds"),
+):
+    """Generate temporary GET presigned URL for client to directly download from R2."""
+    from camoufox_pm.core.cloud_sync import R2_BUCKET, R2_PREFIX, generate_r2_presigned_url
+
+    pm = get_profile_manager()
+    profile = await pm.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    if snapshot_id:
+        snap = await pm.storage.get_profile_snapshot(snapshot_id)
+        if not snap:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        r2_key = snap["r2_key"]
+    else:
+        r2_key = f"{R2_PREFIX}/{profile_id}/snapshot.tar.gz"
+
+    canonical_key = r2_key.lstrip("/")
+    if not canonical_key.startswith(R2_BUCKET):
+        uri = f"/{R2_BUCKET}/{canonical_key}"
+    else:
+        uri = f"/{canonical_key}"
+
+    download_url = generate_r2_presigned_url("GET", uri, expires_in=expires_in)
+    return {
+        "download_url": download_url,
+        "r2_key": r2_key,
+        "expires_in": expires_in,
+        "profile_id": profile_id,
+    }
+
+
+class ConfirmUploadRequest(BaseModel):
+    profile_id: str
+    size_kb: float
+    snapshot_name: str | None = None
+    r2_key: str | None = None
+
+
+@router.post("/sync/confirm-upload", summary="Confirm client direct upload to R2")
+async def confirm_upload_endpoint(req: ConfirmUploadRequest):
+    """Client notifies server after finishing direct upload to R2, updating DB status."""
+    pm = get_profile_manager()
+    profile = await pm.get_profile(req.profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    await pm.storage.set_cloud_sync_status(req.profile_id, "synced", size_kb=req.size_kb)
+
+    if req.r2_key:
+        snapshot_name = req.snapshot_name or f"快照 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        await pm.storage.record_profile_snapshot(
+            profile_id=req.profile_id,
+            snapshot_name=snapshot_name,
+            size_kb=req.size_kb,
+            r2_key=req.r2_key,
+        )
+
+    try:
+        from camoufox_pm.core.event_bus import event_bus
+        await event_bus.broadcast("PROFILE_SYNC_COMPLETED", {
+            "profile_id": req.profile_id,
+            "sync_status": "synced",
+            "size_kb": req.size_kb,
+        })
+    except Exception:
+        pass
+
+    return {"success": True, "profile_id": req.profile_id, "size_kb": req.size_kb}
+
+
 
 

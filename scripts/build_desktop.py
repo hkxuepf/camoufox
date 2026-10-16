@@ -27,17 +27,56 @@ def architecture() -> str:
     return {"AMD64": "x86_64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
 
 
+def embed_chromium_kernel(app_path: Path) -> None:
+    """Embed the locally compiled CamouChromium-155 kernel into the app bundle."""
+    source_kernel = Path.home() / "Library" / "Application Support" / "Camoufox Profile Manager" / "bin" / "kernels" / "CamouChromium-155.app"
+    if not source_kernel.exists():
+        source_kernel = Path.home() / ".camoufox" / "bin" / "kernels" / "CamouChromium-155.app"
+    
+    if not source_kernel.exists():
+        print(f"Notice: Compiled kernel not found at {source_kernel}, skipping bundle embedding.")
+        return
+
+    dest_kernels = app_path / "Contents" / "Resources" / "kernels"
+    dest_kernels.mkdir(parents=True, exist_ok=True)
+    dest_155 = dest_kernels / "CamouChromium-155.app"
+
+    if dest_155.exists():
+        shutil.rmtree(dest_155)
+
+    print(f"--> Embedding CamouChromium-155.app into {dest_155}...")
+    shutil.copytree(source_kernel, dest_155, symlinks=True)
+
+    # 建立软链接供传统 Chromium.app 候选路径访问
+    link_target = app_path / "Contents" / "Resources" / "Chromium.app"
+    if link_target.exists():
+        if link_target.is_symlink():
+            link_target.unlink()
+        else:
+            shutil.rmtree(link_target)
+    link_target.symlink_to("kernels/CamouChromium-155.app")
+    print(f"--> Embedded CamouChromium-155 kernel successfully into app bundle!")
+
+
 def package_desktop() -> list[Path]:
     """Produce installers without requiring signing credentials."""
     arch = architecture()
     if sys.platform == "darwin":
+        app_name = "CamouHub.app" if (DIST / "CamouHub.app").exists() else "Camoufox Profile Manager.app"
+        source_app = DIST / app_name
+        if not source_app.exists():
+            raise FileNotFoundError(f"App bundle not found: {source_app}")
+
+        # 嵌入 CamouChromium-155 原生内核
+        embed_chromium_kernel(source_app)
+
         stage = ROOT / "build" / "dmg"
         shutil.rmtree(stage, ignore_errors=True)
         stage.mkdir(parents=True)
-        shutil.copytree(DIST / "Camoufox Profile Manager.app", stage / "Camoufox Profile Manager.app", symlinks=True)
+        shutil.copytree(source_app, stage / app_name, symlinks=True)
         (stage / "Applications").symlink_to("/Applications")
-        output = DIST / f"camoufox-pm-macos-{arch}.dmg"
-        subprocess.run(["hdiutil", "create", "-volname", "Camoufox Profile Manager", "-srcfolder", str(stage), "-ov", "-format", "UDZO", str(output)], check=True)
+        output = DIST / f"CamouHub-macos-{arch}-kernel155.dmg"
+        subprocess.run(["hdiutil", "create", "-volname", "CamouHub", "-srcfolder", str(stage), "-ov", "-format", "UDZO", str(output)], check=True)
         return [output]
     if sys.platform == "win32":
         makensis = shutil.which("makensis") or str(Path("C:/Program Files (x86)/NSIS/makensis.exe"))

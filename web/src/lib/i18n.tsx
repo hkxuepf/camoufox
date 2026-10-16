@@ -344,7 +344,7 @@ interface I18nContextType {
 const I18nContext = createContext<I18nContextType>({
   lang: 'zh',
   language: 'zh',
-  setLang: () => {},
+  setLang: () => { },
   t: (key: string, fallback?: string) => fallback ?? key,
   isZh: true,
 })

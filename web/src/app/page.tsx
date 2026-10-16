@@ -4,6 +4,7 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
+  AlertCircle,
   ArrowDown,
   ArrowRightLeft,
   ArrowUp,
@@ -13,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Cloud,
   CloudDownload,
   CloudUpload,
   Dna,
@@ -20,6 +22,7 @@ import {
   Eraser,
   FileSpreadsheet,
   Globe,
+  History,
   Info,
   KeyRound,
   Laptop,
@@ -49,13 +52,14 @@ import {
 import { BrowserSetup } from '@/components/browser-setup'
 import { EmptyState } from '@/components/empty-state'
 import { ConfirmDialog, Modal } from '@/components/modal'
-import { ProfileForm } from '@/components/profile-form'
+import { AndroidIcon, AppleIcon, IosIcon, LinuxIcon, ProfileForm, WindowsIcon } from '@/components/profile-form'
 import { CookieModal } from '@/components/cookie-modal'
 import { AccountModal } from '@/components/account-modal'
 import { QuickProxyModal } from '@/components/quick-proxy-modal'
 import { ClearCacheModal } from '@/components/clear-cache-modal'
 import { CookieRobotModal } from '@/components/cookie-robot-modal'
 import { ProfileDetailModal } from '@/components/profile-detail-modal'
+import { SnapshotModal } from '@/components/snapshot-modal'
 import { SynchronizerModal } from '@/components/synchronizer-modal'
 import { useToast } from '@/components/toast'
 import { useI18n } from '@/lib/i18n'
@@ -137,6 +141,7 @@ function ProfilesPage() {
   const [cacheModalProfile, setCacheModalProfile] = useState<Profile | null>(null)
   const [robotModalProfile, setRobotModalProfile] = useState<Profile | null>(null)
   const [detailModalProfile, setDetailModalProfile] = useState<Profile | null>(null)
+  const [snapshotModalProfile, setSnapshotModalProfile] = useState<Profile | null>(null)
 
   const [confirm, setConfirm] = useState<null | {
     title: string
@@ -214,6 +219,65 @@ function ProfilesPage() {
     const timer = setInterval(loadRunning, 4000)
     return () => clearInterval(timer)
   }, [loadProfiles, loadGroups, loadRunning])
+
+  // Real-time fleet WebSocket event bus
+  useEffect(() => {
+    let ws: WebSocket | null = null
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
+
+    const connectWS = () => {
+      try {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        const host = window.location.port === '3000' ? '127.0.0.1:8000' : window.location.host
+        const url = `${proto}//${host}/api/v1/ws`
+        ws = new WebSocket(url)
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            if (data.event === 'PROFILE_SYNC_COMPLETED') {
+              setProfiles((prev) =>
+                prev.map((p) =>
+                  p.id === data.profile_id
+                    ? {
+                        ...p,
+                        sync_status: data.sync_status || 'synced',
+                        sync_size_kb: data.size_kb ?? p.sync_size_kb,
+                      }
+                    : p
+                )
+              )
+            } else if (data.event === 'PROFILE_STATUS_CHANGED') {
+              if (data.is_running) {
+                setRunning((prev) => new Set([...prev, data.profile_id]))
+              } else {
+                setRunning((prev) => {
+                  const next = new Set(prev)
+                  next.delete(data.profile_id)
+                  return next
+                })
+              }
+            }
+          } catch {
+            // ignore non-json
+          }
+        }
+
+        ws.onclose = () => {
+          reconnectTimeout = setTimeout(connectWS, 3000)
+        }
+      } catch {
+        reconnectTimeout = setTimeout(connectWS, 5000)
+      }
+    }
+
+    connectWS()
+    return () => {
+      if (ws) ws.close()
+      if (reconnectTimeout) clearTimeout(reconnectTimeout)
+    }
+  }, [])
+
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -643,16 +707,6 @@ function ProfilesPage() {
             <Layers size={13} className="text-[#1664ff]" />
             群控同步
           </button>
-
-          {/* Local Automation API / Developer Center Button */}
-          <Link
-            href="/api-service/"
-            className="flex items-center gap-1.5 rounded border border-[#eaedf1] bg-white px-3 py-1.5 text-xs font-medium text-[#334155] hover:bg-[#f8fafc] hover:border-[#cbd5e1] hover:text-[#1664ff] transition-colors cursor-pointer shadow-sm"
-            title="开发者中心：Local API 与凭据配置"
-          >
-            <Bot size={13} className="text-[#1664ff]" />
-            开发者中心
-          </Link>
         </div>
 
         {/* Right Filter & Search */}
@@ -831,6 +885,7 @@ function ProfilesPage() {
                 const isRunning = running.has(profile.id)
                 const isBusy = busy.has(profile.id)
                 const os = profile.browser_settings?.os?.toLowerCase() || ''
+                const engine = profile.browser_settings?.browser_engine || 'chromium'
                 const rowNumber = (currentPage - 1) * perPage + index + 1
                 const proxy = profile.proxy_config
 
@@ -866,22 +921,51 @@ function ProfilesPage() {
                       </div>
                     </td>
 
-                    {/* 环境名称 & OS 图标 */}
+                    {/* 环境名称 & OS 图标 (完全对齐新建环境的高清矢量品牌图标) */}
                     <td className="py-3 pr-4">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-5 w-5 shrink-0 items-center justify-center text-[#475569]">
-                          {os.includes('mac') || os.includes('darwin') ? (
-                            <AppleLogo className="w-3.5 h-3.5 fill-current" />
-                          ) : os.includes('win') ? (
-                            <WindowsLogo className="w-3.5 h-3.5 fill-current" />
+                        <div className="flex h-5 w-5 shrink-0 items-center justify-center">
+                          {os.includes('android') ? (
+                            <AndroidIcon className="w-3.5 h-3.5" />
+                          ) : os.includes('ios') || os.includes('iphone') || os.includes('ipad') ? (
+                            <IosIcon className="w-3.5 h-3.5 text-slate-700" />
+                          ) : os.includes('mac') || os.includes('darwin') ? (
+                            <AppleIcon className="w-3.5 h-3.5 text-slate-700" />
+                          ) : os.includes('linux') ? (
+                            <LinuxIcon className="w-3.5 h-3.5" />
                           ) : (
-                            <Laptop size={14} />
+                            <WindowsIcon className="w-3.5 h-3.5" />
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-medium text-[#0f172a]">{profile.name}</span>
                           {profile.is_favorite && (
                             <Star size={12} className="fill-amber-400 text-amber-500" />
+                          )}
+                          {/* 全自动云漫游状态指示徽标 */}
+                          {profile.sync_status === 'syncing' ? (
+                            <span
+                              title="正在自动同步 Cookie 与会话数据到云端漫游..."
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-sky-50 text-sky-600 border border-sky-200 animate-pulse font-normal"
+                            >
+                              <RefreshCw size={9} className="animate-spin text-sky-600" />
+                              同步中
+                            </span>
+                          ) : profile.sync_status === 'failed' ? (
+                            <span
+                              title="上次云端漫游同步失败，请检查网络"
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] bg-amber-50 text-amber-600 border border-amber-200 font-normal"
+                            >
+                              <AlertCircle size={9} />
+                              待同步
+                            </span>
+                          ) : (
+                            <span
+                              title={`全自动云漫游已就绪${profile.sync_size_kb ? ` (${profile.sync_size_kb} KB)` : ''}`}
+                              className="inline-flex items-center text-[#94a3b8] hover:text-[#0284c7] transition-colors"
+                            >
+                              <Cloud size={11} className="text-[#0284c7]" />
+                            </span>
                           )}
                         </div>
                       </div>
@@ -957,9 +1041,11 @@ function ProfilesPage() {
                           className={`flex items-center gap-1 rounded border px-2.5 py-1 text-xs font-medium transition-colors ${
                             isRunning
                               ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100'
+                              : profile.sync_status === 'syncing'
+                              ? 'border-sky-200 bg-sky-50 text-sky-500 cursor-not-allowed'
                               : 'border-[#1664ff] bg-white text-[#1664ff] hover:bg-[#1664ff]/5'
                           }`}
-                          disabled={isBusy}
+                          disabled={isBusy || profile.sync_status === 'syncing'}
                           onClick={() => (isRunning ? stop(profile) : launch(profile))}
                         >
                           {isRunning ? (
@@ -967,9 +1053,18 @@ function ProfilesPage() {
                               <Square size={11} fill="currentColor" />
                               <span>关闭</span>
                             </>
+                          ) : profile.sync_status === 'syncing' ? (
+                            <>
+                              <RefreshCw size={11} className="animate-spin text-sky-500" />
+                              <span>同步中...</span>
+                            </>
                           ) : (
                             <>
-                              <Play size={11} fill="currentColor" />
+                              {engine === 'camoufox' ? (
+                                <span className="text-xs">🦊</span>
+                              ) : (
+                                <Globe size={13} className="text-[#1664ff]" />
+                              )}
                               <span>打开</span>
                             </>
                           )}
@@ -1125,38 +1220,28 @@ function ProfilesPage() {
 
                               <button
                                 className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
-                                onClick={async () => {
+                                onClick={() => {
                                   closeMenu(profile.id)
-                                  try {
-                                    toast('info', `正在备份「${profile.name}」到云端漫游...`)
-                                    const res = await profilesAPI.pushCloudSync(profile.id)
-                                    if (res.success) {
-                                      toast('ok', `云漫游上传成功 (${res.size_kb} KB)`)
-                                    } else {
-                                      toast('error', '云漫游上传失败', (res as any).error)
-                                    }
-                                  } catch (err: any) {
-                                    toast('error', '云漫游上传异常', err.message)
-                                  }
+                                  setSnapshotModalProfile(profile)
                                 }}
                               >
-                                <CloudUpload size={13} className="text-[#0284c7]" />
-                                备份至云漫游
+                                <History size={13} className="text-[#1664ff]" />
+                                快照历史时光机
                               </button>
 
                               <button
                                 className="flex w-full items-center gap-2.5 px-3 py-1.5 text-[#334155] hover:bg-[#f1f5f9]"
                                 onClick={async () => {
                                   closeMenu(profile.id)
-                                  if (!window.confirm(`确定从云端恢复环境「${profile.name}」的最新会话数据？`)) return
+                                  if (!window.confirm(`【应急恢复】确定强制从云端漫游恢复环境「${profile.name}」的最新会话数据？\n\n注意：此操作将使用云端数据覆盖本地当前 Cookie 与缓存。`)) return
                                   try {
-                                    toast('info', `正在从云端漫游拉取「${profile.name}」...`)
+                                    toast('info', `正在从云端拉取「${profile.name}」...`)
                                     const res = await profilesAPI.pullCloudSync(profile.id)
                                     if (res.success) {
                                       toast('ok', `云漫游恢复成功 (${res.size_kb} KB)`)
                                       loadProfiles()
                                     } else {
-                                      toast('error', '云漫游拉取失败', (res as any).error)
+                                      toast('error', '云漫游恢复失败', (res as any).error)
                                     }
                                   } catch (err: any) {
                                     toast('error', '云漫游拉取异常', err.message)
@@ -1164,7 +1249,7 @@ function ProfilesPage() {
                                 }}
                               >
                                 <CloudDownload size={13} className="text-[#0284c7]" />
-                                从云漫游恢复
+                                从云漫游恢复 (应急)
                               </button>
 
                               <button
@@ -1300,6 +1385,13 @@ function ProfilesPage() {
         open={detailModalProfile !== null}
         profile={detailModalProfile}
         onClose={() => setDetailModalProfile(null)}
+      />
+
+      <SnapshotModal
+        open={snapshotModalProfile !== null}
+        profile={snapshotModalProfile}
+        onClose={() => setSnapshotModalProfile(null)}
+        onRollbackSuccess={loadProfiles}
       />
 
       <SynchronizerModal

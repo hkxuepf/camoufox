@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -55,7 +55,13 @@ async def lifespan(app: FastAPI):
     profile_manager = None
     scheduler = None
     backup_task = None
+    redis_mgr = None
     try:
+        from camoufox_pm.core.redis_lease import get_redis_lease_manager
+        redis_mgr = get_redis_lease_manager()
+        if redis_mgr:
+            await redis_mgr.initialize()
+
         await storage_manager.initialize()
         data_dir = str(Path(settings.db_path).parent)
         profile_manager = ProfileManager(storage_manager, data_dir)
@@ -111,6 +117,8 @@ async def lifespan(app: FastAPI):
         finally:
             recovery.set_backup_manager(None)
             await storage_manager.close()
+            if redis_mgr:
+                await redis_mgr.close()
 
 
 app = FastAPI(
@@ -243,12 +251,31 @@ async def root_radar(profile_id: str = ""):
 @app.get("/radar.js", include_in_schema=False)
 async def root_radar_js(timezone: str = "Asia/Shanghai"):
     from fastapi.responses import Response
+
     from camoufox_pm.api.routes.radar import generate_radar_js_str
     return Response(content=generate_radar_js_str(timezone=timezone), media_type="application/javascript")
 
 
 app.include_router(radar.router, prefix="/api/v1")
 app.include_router(hubstudio_compat.router)
+
+
+@app.websocket("/api/v1/ws")
+async def websocket_event_bus_endpoint(websocket: WebSocket):
+    """Real-time event streaming bus for fleet synchronization (zero-polling)."""
+    from camoufox_pm.core.event_bus import event_bus
+
+    await event_bus.connect(websocket)
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        await event_bus.disconnect(websocket)
+    except Exception:
+        await event_bus.disconnect(websocket)
+
 
 
 @app.post("/api/v1/system/close-all-browsers", include_in_schema=False)
@@ -330,6 +357,15 @@ def _webui_dir() -> Path | None:
 # and /docs take precedence over the catch-all static mount.
 _webui = _webui_dir()
 if _webui is not None:
+    @app.middleware("http")
+    async def no_cache_static_middleware(request: Request, call_next):
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
     app.mount("/", StaticFiles(directory=str(_webui), html=True), name="webui")
     logger.info(f"Serving web UI from {_webui}")
 else:

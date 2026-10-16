@@ -1,43 +1,78 @@
-# Run it with:  docker compose up
-# then open http://localhost:8000
-#
-# One service: the API and the web UI are served from one process on one port,
-# so there is no second container and no CORS to configure.
-#
-# The port is published to loopback (127.0.0.1) only, because the app is open by
-# default. Before exposing it beyond this host, create a user account
-# (`docker compose exec app uv run camoufox-pm user add <name>`) or set
-# CPM_API_KEY, and set CPM_SECRET_KEY to encrypt proxy passwords at rest.
+# CamouHub Production Docker Compose Topology
+# Run Lite Mode (SQLite): docker compose up app
+# Run Enterprise Mode (Postgres + Redis): docker compose up
+
 services:
   app:
     build: .
-    container_name: camoufox-app
+    container_name: camouhub-server
     restart: unless-stopped
+    ports:
+      - "8000:8000"
     environment:
       CPM_SECRET_KEY: "LdNkRX1Ne11-gJvBM2GaeyOIXQVpUbALsAUA78EQWo8="
       CPM_SECURE_COOKIES: "1"
       CPM_HOST: "0.0.0.0"
       CPM_PORT: "8000"
-      CPM_CLOUD_SERVER: ""
+      # Enterprise database & Redis URL (uncomment to activate high-concurrency mode)
+      DATABASE_URL: "postgresql://cpm_user:cpm_pass@postgres:5432/camouhub"
+      REDIS_URL: "redis://redis:6379/0"
       CPM_DB_PATH: "/data/profiles.db"
+      R2_ACCESS_KEY_ID: "${R2_ACCESS_KEY_ID:-9f12c91813dddea0d5fe6c63963dadf5}"
+      R2_SECRET_ACCESS_KEY: "${R2_SECRET_ACCESS_KEY:-6ae268a165e49f6c05de633b037177606bef740ff991ab7db9c29f9254d2f4a1}"
+      R2_HOST: "a416a58f6b1d69a87d52bf0c70c27163.r2.cloudflarestorage.com"
+      R2_BUCKET: "tikmatrix"
     volumes:
       - cpm-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
-      - camoufox-net
+      - camouhub-net
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: camouhub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: camouhub
+      POSTGRES_USER: cpm_user
+      POSTGRES_PASSWORD: cpm_pass
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cpm_user -d camouhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - camouhub-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: camouhub-redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - camouhub-net
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: camoufox-tunnel
+    container_name: camouhub-tunnel
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token eyJhIjoiYTQxNmE1OGY2YjFkNjlhODdkNTJiZjBjNzBjMjcxNjMiLCJ0IjoiOWI0MzFmOGUtYjA3NC00MjE5LTgzZjQtMzVkMGNjZjRiNDE4IiwicyI6Ik9XWm1Zek16TmpNdE1USmtOaTAwWWpJekxUa3haREF0T1ROaVlXSTNZVFUzWWpjeSJ9
     depends_on:
       - app
     networks:
-      - camoufox-net
+      - camouhub-net
 
 volumes:
   cpm-data:
+  pg-data:
+  redis-data:
 
 networks:
-  camoufox-net:
-
+  camouhub-net:

@@ -12,6 +12,9 @@ const API_PREFIX = '/api/v1'
 export interface BrowserSettings {
   browser_ui?: 'desktop' | 'camoufox'
   browser_engine?: 'chromium' | 'camoufox'
+  kernel_version?: string | null
+  kernel_channel?: 'stable' | 'beta' | 'dev'
+  kernel_auto_download?: boolean
   os: string
   screen: string
   user_agent?: string | null
@@ -46,6 +49,53 @@ export interface BrowserSettings {
   webgl_renderer?: string | null
   remote_debugging_port?: number | null
   custom_args?: string[]
+}
+
+export interface ClientReleaseItem {
+  id: string
+  version: string
+  title?: string
+  changelog?: string
+  changelog_en?: string
+  min_version?: string
+  is_force_update?: boolean
+  is_active?: boolean
+  mac_arm64_url?: string | null
+  mac_x64_url?: string | null
+  win_x64_url?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface KernelReleaseItem {
+  id: string
+  engine: 'chromium' | 'camoufox'
+  version: string
+  display_name?: string
+  changelog?: string
+  is_recommended?: boolean
+  is_active?: boolean
+  mac_arm64_url?: string | null
+  mac_arm64_sha256?: string | null
+  mac_x64_url?: string | null
+  mac_x64_sha256?: string | null
+  win_x64_url?: string | null
+  win_x64_sha256?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ClientUpdateCheckResult {
+  has_update: boolean
+  current_version: string
+  latest_version: string
+  title?: string
+  changelog?: string
+  changelog_en?: string
+  is_force_update?: boolean
+  download_url?: string | null
+  download_mirror_url?: string | null
+  published_at?: string
 }
 
 export interface ProxyConfig {
@@ -103,6 +153,10 @@ export interface Profile {
    * landed in the meantime is refused rather than silently overwritten.
    */
   row_version: number
+  sync_status?: string | null
+  last_synced_at?: string | null
+  sync_size_kb?: number | null
+  cloud_sync_enabled?: boolean
 }
 
 export interface ProfilesResponse {
@@ -400,6 +454,41 @@ export const profilesAPI = {
       method: 'POST',
     })
   },
+
+  listSnapshots(id: string): Promise<{
+    profile_id: string
+    snapshots: Array<{
+      id: string
+      profile_id: string
+      snapshot_name: string
+      size_kb: number
+      r2_key: string
+      created_at: string
+    }>
+  }> {
+    return request(`${API_PREFIX}/profiles/${id}/snapshots`, {
+      method: 'GET',
+    })
+  },
+
+  rollbackSnapshot(
+    profileId: string,
+    snapshotId: string
+  ): Promise<{ success: boolean; message: string; snapshot: any }> {
+    return request(`${API_PREFIX}/profiles/${profileId}/snapshots/${snapshotId}/rollback`, {
+      method: 'POST',
+    })
+  },
+
+  deleteSnapshot(
+    profileId: string,
+    snapshotId: string
+  ): Promise<{ success: boolean; snapshot_id: string }> {
+    return request(`${API_PREFIX}/profiles/${profileId}/snapshots/${snapshotId}`, {
+      method: 'DELETE',
+    })
+  },
+
 
   // The same check for a profile that is still being filled in, so the form can
   // answer before anything is saved.
@@ -882,6 +971,55 @@ export const adminAPI = {
     })
     return res.data
   },
+  async getClientReleases(): Promise<ClientReleaseItem[]> {
+    const res = await request<{ data: ClientReleaseItem[] }>(`${API_PREFIX}/admin/releases/client`)
+    return res.data
+  },
+  async createClientRelease(data: Partial<ClientReleaseItem>): Promise<ClientReleaseItem> {
+    const res = await request<{ data: ClientReleaseItem }>(`${API_PREFIX}/admin/releases/client`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    return res.data
+  },
+  async updateClientRelease(id: string, data: Partial<ClientReleaseItem>): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/releases/client/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    return res.data
+  },
+  async deleteClientRelease(id: string): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/releases/client/${id}`, {
+      method: 'DELETE',
+    })
+    return res.data
+  },
+  async getKernelReleases(engine?: string): Promise<KernelReleaseItem[]> {
+    const q = engine ? `?engine=${engine}` : ''
+    const res = await request<{ data: KernelReleaseItem[] }>(`${API_PREFIX}/admin/releases/kernel${q}`)
+    return res.data
+  },
+  async createKernelRelease(data: Partial<KernelReleaseItem>): Promise<KernelReleaseItem> {
+    const res = await request<{ data: KernelReleaseItem }>(`${API_PREFIX}/admin/releases/kernel`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    return res.data
+  },
+  async updateKernelRelease(id: string, data: Partial<KernelReleaseItem>): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/releases/kernel/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    return res.data
+  },
+  async deleteKernelRelease(id: string): Promise<boolean> {
+    const res = await request<{ data: boolean }>(`${API_PREFIX}/admin/releases/kernel/${id}`, {
+      method: 'DELETE',
+    })
+    return res.data
+  },
 }
 
 export const systemAPI = {
@@ -916,6 +1054,20 @@ export const systemAPI = {
   async config(): Promise<SystemConfig> {
     const body = await request<{ data: SystemConfig }>(`${API_PREFIX}/system/config`)
     return body.data
+  },
+
+  async checkClientUpdate(platform = 'mac_arm64', currentVersion = '1.0.0'): Promise<ClientUpdateCheckResult> {
+    const res = await request<{ data: ClientUpdateCheckResult }>(
+      `${API_PREFIX}/system/client/check-update?platform=${platform}&current_version=${currentVersion}`
+    )
+    return res.data
+  },
+
+  async getKernelsManifest(platform = 'mac_arm64'): Promise<KernelReleaseItem[]> {
+    const res = await request<{ data: KernelReleaseItem[] }>(
+      `${API_PREFIX}/system/kernels/manifest?platform=${platform}`
+    )
+    return res.data
   },
 }
 

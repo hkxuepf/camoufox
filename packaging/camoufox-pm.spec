@@ -17,6 +17,9 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 datas = [(os.path.join(ROOT, "src", "camoufox_pm", "webui"), "camoufox_pm/webui")]
 datas += copy_metadata("camoufox-profile-manager")
 binaries = []
+lock_dylib_src = os.path.join(ROOT, "src", "camoufox_pm", "bin", "libcamou_window_lock.dylib")
+if os.path.exists(lock_dylib_src):
+    binaries.append((lock_dylib_src, "."))
 hiddenimports = collect_submodules("uvicorn") + collect_submodules("camoufox_pm")
 if sys.platform.startswith("linux"):
     hiddenimports += ["webview.platforms.qt", "PyQt6.QtWebEngineWidgets", "PyQt6.QtWebEngineCore"]
@@ -37,7 +40,7 @@ for _pkg in (
 
 a = Analysis(
     [os.path.join(SPECPATH, "launch.py")],
-    pathex=[],
+    pathex=[os.path.join(ROOT, "src")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

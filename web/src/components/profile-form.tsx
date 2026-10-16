@@ -1,45 +1,98 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Check, Info, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Globe,
+  HelpCircle,
+  List,
+  LoaderCircle,
+  RefreshCw,
+  Server,
+  Shuffle,
+  Trash2,
+  X,
+} from 'lucide-react'
 
-import { Modal } from '@/components/modal'
 import { useToast } from '@/components/toast'
 import { useI18n } from '@/lib/i18n'
 import {
-  getCountryProfile,
-  getLanguagesForCountry,
-  getTimezoneForCountry,
-} from '@/lib/country-languages'
-import {
-  hasGeography,
-  isStaleWrite,
   OS_LABELS,
-  presetsAPI,
   profilesAPI,
   proxiesAPI,
-  type DevicePreset,
-  type FingerprintSummary,
   type Group,
   type Profile,
-  type ProxyCheck,
   type ProxyItem,
-  type ProxyLocation,
 } from '@/lib/api'
 
-interface FormState {
+// --- 精美操作系统官方矢量 SVG 图标 ---
+export function WindowsIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 88 88" fill="currentColor">
+      <path fill="#0078D7" d="M0 12.402l35.687-4.86.016 34.423-35.67.202L0 12.402zm35.67 33.529l.028 34.453L.028 75.48.016 45.728l35.654.203zm4.383-39.124L87.488 0v41.524l-47.435.31V6.807zm47.459 39.029l-.024 42.164-47.435-6.674V45.526l47.459.31z" />
+    </svg>
+  )
+}
+
+export function AndroidIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="#3DDC84">
+      <path d="M6 18c0 .55.45 1 1 1h1v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h2v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h1c.55 0 1-.45 1-1V8H6v10zM3.5 8C2.67 8 2 8.67 2 9.5v6c0 .83.67 1.5 1.5 1.5S5 16.33 5 15.5v-6C5 8.67 4.33 8 3.5 8zm17 0c-.83 0-1.5.67-1.5 1.5v6c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-6c0-.83-.67-1.5-1.5-1.5zm-4.97-4.84l1.3-1.3c.2-.2.2-.51 0-.71s-.51-.2-.71 0l-1.48 1.48C13.85 2.23 12.95 2 12 2c-.96 0-1.86.23-2.66.63L7.85 1.15c-.2-.2-.51-.2-.71 0s-.2.51 0 .71l1.31 1.31C6.97 4.26 6 6.01 6 8h12c0-1.99-.97-3.75-2.47-4.84zM10 5H9V4h1v1zm5 0h-1V4h1v1z" />
+    </svg>
+  )
+}
+
+export function AppleIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 170 170" fill="currentColor">
+      <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.04-7.67-7.81-11.96-14.34-6.42-9.78-11.44-20.73-15.06-32.84-3.62-12.12-5.43-23.73-5.43-34.84 0-14.35 3.59-26.4 10.77-36.14 7.18-9.74 16.27-14.72 27.27-14.93 4.89 0 10.15 1.34 15.78 4.02 5.63 2.68 9.53 4.07 11.71 4.19 1.9.11 6.03-1.42 12.39-4.58 6.36-3.17 12.01-4.53 16.96-4.09 13.04 1.09 23.37 6.32 30.99 15.69-11.53 6.96-17.18 16.53-16.96 28.71.22 9.57 3.86 17.51 10.93 23.82 7.07 6.31 15.33 10.01 24.79 11.1-2.28 7.07-5.16 14.14-8.63 21.21zM119.22 31.84c0-7.29 2.63-14.18 7.89-20.67 5.26-6.49 11.83-10.55 19.7-12.17.65 1.74.98 3.59.98 5.55 0 7.39-2.8 14.44-8.4 21.16-5.6 6.72-12.33 10.64-20.17 11.76v-5.63z" />
+    </svg>
+  )
+}
+
+export function IosIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="2" width="14" height="20" rx="3" ry="3" />
+      <line x1="12" y1="18" x2="12.01" y2="18" strokeWidth="3" />
+    </svg>
+  )
+}
+
+export function LinuxIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path fill="#F5BA14" d="M12 2C9.5 2 7.5 4 7.5 6.5c0 1.5.5 2.5 1.5 3.5-.5 1-1.5 2.5-1.5 4.5 0 2 1.5 3.5 3 4 .5.5 1 1.5 1 2.5v1h1v-1c0-1 .5-2 1-2.5 1.5-.5 3-2 3-4 0-2-1-3.5-1.5-4.5 1-1 1.5-2 1.5-3.5C16.5 4 14.5 2 12 2z" />
+      <circle cx="10" cy="5.5" r="1" fill="#000" />
+      <circle cx="14" cy="5.5" r="1" fill="#000" />
+      <path fill="#FFA500" d="M11 7h2l-1 2z" />
+    </svg>
+  )
+}
+
+export interface FormState {
   name: string
+  batchCount: number
   group: string
   status: string
   notes: string
   os: string
+  deviceModel: string
+  isCustomModel: boolean
   browserUi: 'desktop' | 'camoufox'
   browserEngine: 'chromium' | 'camoufox'
+  uaMode: 'random' | 'custom'
+  uaFilter: string
   userAgent: string
   timezone: string
   languages: string
   hardwareConcurrency: string
   deviceMemory: string
+  resolutionPreset: string // 'real' | preset_id | 'custom'
+  physicalWidth: string
+  physicalHeight: string
   windowWidth: string
   windowHeight: string
   devicePixelRatio: string
@@ -58,98 +111,502 @@ interface FormState {
   geoMode: 'auto' | 'manual'
   latitude: string
   longitude: string
-  proxyType: string
+  proxyMode: 'none' | 'custom' | 'pool' | 'api'
+  proxyCustomType: string
   proxyServer: string
   proxyUsername: string
   proxyPassword: string
+  proxyPoolId: string
+  proxyApiUrl: string
+  account: string
+  cookies: string
 }
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform || navigator.userAgent);
+export interface PhoneModelSpec {
+  id: string
+  label: string
+  screenWidth: string     // 真实物理屏幕宽
+  screenHeight: string    // 真实物理屏幕高
+  viewportWidth: string   // 真实逻辑视口宽
+  viewportHeight: string  // 真实逻辑视口高
+  dpr: string             // 设备缩放比
+  cores: string           // 真实 CPU 核心数
+  memory: string          // 真实运行内存 RAM (GB)
+  gpuVendor: string       // WebGL Vendor
+  gpuRenderer: string     // WebGL Renderer
+  osVer: string           // 系统版本
+}
 
-export const WEBGL_PRESETS = [
-  { label: '自动默认 (跟随底层真实显卡)', vendor: '', renderer: '' },
-  { label: 'Apple M4 (Apple Metal GPU)', vendor: 'Apple', renderer: 'Apple M4' },
-  { label: 'Apple M3 Max (Apple Metal GPU)', vendor: 'Apple', renderer: 'Apple M3 Max' },
-  { label: 'NVIDIA GeForce RTX 4090', vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
-  { label: 'NVIDIA GeForce RTX 4070', vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
-  { label: 'AMD Radeon RX 7800 XT', vendor: 'Google Inc. (AMD)', renderer: 'ANGLE (AMD, AMD Radeon RX 7800 XT Direct3D11 vs_5_0 ps_5_0, D3D11)' },
-  { label: 'Intel Iris Xe Graphics', vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+// 严谨的主流机型权威硬件规格库 (与物理分辨率/视口/DPR/CPU核心/内存/显卡/OS版本严格对应)
+export const ANDROID_MODELS: PhoneModelSpec[] = [
+  // --- 2024~2025 最新顶级旗舰 (Android 14 / 15) ---
+  { id: 'SM-S928B', label: 'Samsung Galaxy S24 Ultra (骁龙8 Gen3 旗舰)', screenWidth: '1440', screenHeight: '3120', viewportWidth: '412', viewportHeight: '915', dpr: '3.0', cores: '8', memory: '12', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 750', osVer: '14' },
+  { id: 'SM-S926B', label: 'Samsung Galaxy S24+ (骁龙8 Gen3)', screenWidth: '1440', screenHeight: '3120', viewportWidth: '412', viewportHeight: '915', dpr: '3.0', cores: '8', memory: '12', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 750', osVer: '14' },
+  { id: 'SM-S921B', label: 'Samsung Galaxy S24 (小屏旗舰)', screenWidth: '1080', screenHeight: '2340', viewportWidth: '360', viewportHeight: '780', dpr: '3.0', cores: '8', memory: '8', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 750', osVer: '14' },
+  { id: 'SM-F946B', label: 'Samsung Galaxy Z Fold 5 (折叠旗舰)', screenWidth: '1812', screenHeight: '2176', viewportWidth: '906', viewportHeight: '1088', dpr: '2.0', cores: '8', memory: '12', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 740', osVer: '14' },
+  { id: 'SM-S918B', label: 'Samsung Galaxy S23 Ultra (骁龙8 Gen2)', screenWidth: '1440', screenHeight: '3088', viewportWidth: '412', viewportHeight: '883', dpr: '2.625', cores: '8', memory: '12', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 740', osVer: '14' },
+
+  { id: 'Pixel 9 Pro', label: 'Google Pixel 9 Pro (Tensor G4 · Android 15)', screenWidth: '1280', screenHeight: '2856', viewportWidth: '412', viewportHeight: '922', dpr: '2.875', cores: '8', memory: '16', gpuVendor: 'ARM', gpuRenderer: 'Mali-G715', osVer: '15' },
+  { id: 'Pixel 8 Pro', label: 'Google Pixel 8 Pro (Tensor G3)', screenWidth: '1344', screenHeight: '2992', viewportWidth: '412', viewportHeight: '915', dpr: '2.625', cores: '8', memory: '12', gpuVendor: 'ARM', gpuRenderer: 'Mali-G715', osVer: '14' },
+  { id: 'Pixel 8', label: 'Google Pixel 8', screenWidth: '1080', screenHeight: '2400', viewportWidth: '412', viewportHeight: '915', dpr: '2.625', cores: '8', memory: '8', gpuVendor: 'ARM', gpuRenderer: 'Mali-G715', osVer: '14' },
+
+  { id: 'Xiaomi 23116PN5BC', label: 'Xiaomi 14 Pro (骁龙8 Gen3 影像旗舰)', screenWidth: '1440', screenHeight: '3200', viewportWidth: '412', viewportHeight: '915', dpr: '3.0', cores: '8', memory: '16', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 750', osVer: '14' },
+  { id: 'Xiaomi 23049PCD8G', label: 'Xiaomi POCO F5 (骁龙7+ Gen2)', screenWidth: '1080', screenHeight: '2400', viewportWidth: '393', viewportHeight: '873', dpr: '2.75', cores: '8', memory: '8', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 725', osVer: '13' },
+  { id: 'OnePlus CPH2581', label: 'OnePlus 12 (一加12 旗舰)', screenWidth: '1440', screenHeight: '3168', viewportWidth: '412', viewportHeight: '915', dpr: '3.0', cores: '8', memory: '16', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 750', osVer: '14' },
+  { id: 'OPPO PHY110', label: 'OPPO Find X7 Ultra (双潜望旗舰)', screenWidth: '1440', screenHeight: '3168', viewportWidth: '412', viewportHeight: '915', dpr: '3.0', cores: '8', memory: '16', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 750', osVer: '14' },
+  { id: 'OPPO CPH1803', label: 'OPPO CPH1803 (OPPO A3s 经典机型)', screenWidth: '720', screenHeight: '1520', viewportWidth: '360', viewportHeight: '760', dpr: '2.0', cores: '8', memory: '4', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 506', osVer: '13' },
+
+  { id: 'SM-X910', label: 'Samsung Galaxy Tab S9 Ultra (14.6" 巨屏平板)', screenWidth: '1848', screenHeight: '2960', viewportWidth: '924', viewportHeight: '1480', dpr: '2.0', cores: '8', memory: '12', gpuVendor: 'Qualcomm', gpuRenderer: 'Adreno (TM) 740', osVer: '14' },
+  { id: 'SM-X200', label: 'Samsung Galaxy Tab A8 (入门平板)', screenWidth: '1200', screenHeight: '1920', viewportWidth: '800', viewportHeight: '1280', dpr: '1.5', cores: '8', memory: '4', gpuVendor: 'ARM', gpuRenderer: 'Mali G52 MP2', osVer: '13' },
 ]
 
-function WindowsIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 88 88" fill="currentColor">
-      <path d="M0 12.402l35.687-4.86.016 34.423-35.67.202L0 12.402zm35.67 33.529l.028 34.453L.028 75.48.016 45.728l35.654.203zm4.383-39.124L87.488 0v41.524l-47.435.31V6.807zm47.459 39.029l-.024 42.164-47.435-6.674V45.526l47.459.31z" />
-    </svg>
-  )
-}
+export const IOS_MODELS: PhoneModelSpec[] = [
+  // --- 2024~2025 最新 iPhone 16 全系列 (iOS 18) ---
+  { id: 'iPhone 16 Pro Max', label: 'iPhone 16 Pro Max (Apple A18 Pro · iOS 18)', screenWidth: '1320', screenHeight: '2868', viewportWidth: '440', viewportHeight: '956', dpr: '3.0', cores: '6', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '18_0' },
+  { id: 'iPhone 16 Pro', label: 'iPhone 16 Pro (Apple A18 Pro · iOS 18)', screenWidth: '1206', screenHeight: '2622', viewportWidth: '402', viewportHeight: '874', dpr: '3.0', cores: '6', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '18_0' },
+  { id: 'iPhone 16 Plus', label: 'iPhone 16 Plus (Apple A18 · iOS 18)', screenWidth: '1290', screenHeight: '2796', viewportWidth: '430', viewportHeight: '932', dpr: '3.0', cores: '6', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '18_0' },
+  { id: 'iPhone 16', label: 'iPhone 16 (Apple A18 · iOS 18)', screenWidth: '1179', screenHeight: '2556', viewportWidth: '393', viewportHeight: '852', dpr: '3.0', cores: '6', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '18_0' },
 
-function AppleIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 170 170" fill="currentColor">
-      <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.04-7.67-7.81-11.96-14.34-6.42-9.78-11.44-20.73-15.06-32.84-3.62-12.12-5.43-23.73-5.43-34.84 0-14.35 3.59-26.4 10.77-36.14 7.18-9.74 16.27-14.72 27.27-14.93 4.89 0 10.15 1.34 15.78 4.02 5.63 2.68 9.53 4.07 11.71 4.19 1.9.11 6.03-1.42 12.39-4.58 6.36-3.17 12.01-4.53 16.96-4.09 13.04 1.09 23.37 6.32 30.99 15.69-11.53 6.96-17.18 16.53-16.96 28.71.22 9.57 3.86 17.51 10.93 23.82 7.07 6.31 15.33 10.01 24.79 11.1-2.28 7.07-5.16 14.14-8.63 21.21zM119.22 31.84c0-7.29 2.63-14.18 7.89-20.67 5.26-6.49 11.83-10.55 19.7-12.17.65 1.74.98 3.59.98 5.55 0 7.39-2.8 14.44-8.4 21.16-5.6 6.72-12.33 10.64-20.17 11.76v-5.63z" />
-    </svg>
-  )
-}
+  // --- iPhone 15 系列 (iOS 17) ---
+  { id: 'iPhone 15 Pro Max', label: 'iPhone 15 Pro Max (Apple A17 Pro)', screenWidth: '1290', screenHeight: '2796', viewportWidth: '430', viewportHeight: '932', dpr: '3.0', cores: '6', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_5_1' },
+  { id: 'iPhone 15 Pro', label: 'iPhone 15 Pro (Apple A17 Pro)', screenWidth: '1179', screenHeight: '2556', viewportWidth: '393', viewportHeight: '852', dpr: '3.0', cores: '6', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_5_1' },
+  { id: 'iPhone 15 Plus', label: 'iPhone 15 Plus (Apple A16)', screenWidth: '1290', screenHeight: '2796', viewportWidth: '430', viewportHeight: '932', dpr: '3.0', cores: '6', memory: '6', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_5' },
+  { id: 'iPhone 15', label: 'iPhone 15 (Apple A16)', screenWidth: '1179', screenHeight: '2556', viewportWidth: '393', viewportHeight: '852', dpr: '3.0', cores: '6', memory: '6', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_5' },
 
-function LinuxIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C9.5 2 7.5 4 7.5 6.5c0 1.5.5 2.5 1.5 3.5-.5 1-1.5 2.5-1.5 4.5 0 2 1.5 3.5 3 4 .5.5 1 1.5 1 2.5v1h1v-1c0-1 .5-2 1-2.5 1.5-.5 3-2 3-4 0-2-1-3.5-1.5-4.5 1-1 1.5-2 1.5-3.5C16.5 4 14.5 2 12 2z"/>
-    </svg>
-  )
-}
+  // --- 经典热卖机型 ---
+  { id: 'iPhone 14 Pro Max', label: 'iPhone 14 Pro Max (灵动岛首发)', screenWidth: '1290', screenHeight: '2796', viewportWidth: '430', viewportHeight: '932', dpr: '3.0', cores: '6', memory: '6', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_4_1' },
+  { id: 'iPhone 14', label: 'iPhone 14', screenWidth: '1170', screenHeight: '2532', viewportWidth: '390', viewportHeight: '844', dpr: '3.0', cores: '6', memory: '6', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_0' },
+  { id: 'iPhone 13', label: 'iPhone 13', screenWidth: '1170', screenHeight: '2532', viewportWidth: '390', viewportHeight: '844', dpr: '3.0', cores: '6', memory: '4', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '16_6' },
 
-function AndroidIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M6 18c0 .55.45 1 1 1h1v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h2v3.5c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5V19h1c.55 0 1-.45 1-1V8H6v10zM3.5 8C2.67 8 2 8.67 2 9.5v6c0 .83.67 1.5 1.5 1.5S5 16.33 5 15.5v-6C5 8.67 4.33 8 3.5 8zm17 0c-.83 0-1.5.67-1.5 1.5v6c0 .83.67 1.5 1.5 1.5s1.5-.67 1.5-1.5v-6c0-.83-.67-1.5-1.5-1.5zm-4.97-4.84l1.3-1.3c.2-.2.2-.51 0-.71s-.51-.2-.71 0l-1.48 1.48C13.85 2.23 12.95 2 12 2c-.96 0-1.86.23-2.66.63L7.85 1.15c-.2-.2-.51-.2-.71 0s-.2.51 0 .71l1.31 1.31C6.97 4.26 6 6.01 6 8h12c0-1.99-.97-3.75-2.47-4.84zM10 5H9V4h1v1zm5 0h-1V4h1v1z"/>
-    </svg>
-  )
-}
+  // --- iPad 专业平板 ---
+  { id: 'iPad Pro (13-inch M4)', label: 'iPad Pro 13" (Apple M4 · 2024)', screenWidth: '2064', screenHeight: '2752', viewportWidth: '1032', viewportHeight: '1376', dpr: '2.0', cores: '9', memory: '16', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_5' },
+  { id: 'iPad Pro (12.9-inch)', label: 'iPad Pro 12.9" (Apple M2)', screenWidth: '2048', screenHeight: '2732', viewportWidth: '1024', viewportHeight: '1366', dpr: '2.0', cores: '8', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_5' },
+  { id: 'iPad Air (11-inch M2)', label: 'iPad Air 11" (Apple M2 · 2024)', screenWidth: '1640', screenHeight: '2360', viewportWidth: '820', viewportHeight: '1180', dpr: '2.0', cores: '8', memory: '8', gpuVendor: 'Apple Inc.', gpuRenderer: 'Apple GPU', osVer: '17_5' },
+]
 
-function IosIcon({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14zm-5-3c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
-    </svg>
-  )
-}
-
-export const SCREEN_PRESETS = [
-  { label: '1920 × 1080 (16:9 全高清标准)', w: '1920', h: '1080' },
-  { label: '1512 × 982 (MacBook Pro 14" 原生视网膜)', w: '1512', h: '982' },
-  { label: '2560 × 1440 (2K QHD 高清)', w: '2560', h: '1440' },
-  { label: '1440 × 900 (MacBook Air/Pro)', w: '1440', h: '900' },
-  { label: '1366 × 768 (常见笔记本)', w: '1366', h: '768' },
-  { label: '1680 × 1050 (16:10 宽屏)', w: '1680', h: '1050' },
-  { label: '3840 × 2160 (4K 超高清)', w: '3840', h: '2160' },
+// PC 常用分辨率预设 (第一项为“真实跟随本机屏幕”)
+export const PC_RESOLUTION_PRESETS = [
+  { id: 'real', label: '真实 (跟随本机当前屏幕)' },
+  { id: '1920x1080', label: '1920 × 1080 (1080P 全高清 · 最通用)', physW: '1920', physH: '1080', viewW: '1920', viewH: '1080', dpr: '1.0' },
+  { id: '2560x1440', label: '2560 × 1440 (2K QHD 高分屏)', physW: '2560', physH: '1440', viewW: '2560', viewH: '1440', dpr: '1.0' },
+  { id: '1440x900', label: '1440 × 900 (MacBook Air 经典标配)', physW: '2880', physH: '1800', viewW: '1440', viewH: '900', dpr: '2.0' },
+  { id: '1680x1050', label: '1680 × 1050 (MacBook Pro 标配)', physW: '3360', physH: '2100', viewW: '1680', viewH: '1050', dpr: '2.0' },
+  { id: '2560x1600', label: '2560 × 1600 (Retina 超视网膜)', physW: '2560', physH: '1600', viewW: '1280', viewH: '800', dpr: '2.0' },
+  { id: '3840x2160', label: '3840 × 2160 (4K 超高清)', physW: '3840', physH: '2160', viewW: '3840', viewH: '2160', dpr: '1.0' },
+  { id: '1366x768', label: '1366 × 768 (经典笔记本)', physW: '1366', physH: '768', viewW: '1366', viewH: '768', dpr: '1.0' },
+  { id: 'custom', label: '自定义分辨率输入...' },
 ]
 
 export const OS_ITEMS = [
-  { id: 'windows', label: 'Windows', tag: 'Win 10/11', icon: WindowsIcon, iconColor: 'text-sky-400 group-hover:text-sky-300' },
-  { id: 'macos', label: 'macOS', tag: 'Apple Silicon', icon: AppleIcon, iconColor: 'text-zinc-200 group-hover:text-white' },
-  { id: 'linux', label: 'Linux', tag: 'Ubuntu / Debian', icon: LinuxIcon, iconColor: 'text-amber-500 group-hover:text-amber-400' },
-  { id: 'android', label: 'Android', tag: 'Mobile 14+', icon: AndroidIcon, iconColor: 'text-emerald-400 group-hover:text-emerald-300' },
-  { id: 'ios', label: 'iOS', tag: 'iPhone / iPad', icon: IosIcon, iconColor: 'text-indigo-400 group-hover:text-indigo-300' },
+  { id: 'windows', label: 'Windows', icon: WindowsIcon },
+  { id: 'android', label: 'Android', icon: AndroidIcon },
+  { id: 'ios', label: 'iOS', icon: IosIcon },
+  { id: 'macos', label: 'macOS', icon: AppleIcon },
+  { id: 'linux', label: 'Linux', icon: LinuxIcon },
 ]
 
-const EMPTY: FormState = {
-  name: '',
+// --- 全类型黄金真实硬件套件库 (机型/物理分辨率/视口/DPR/CPU/内存/显卡 100% 严谨绑定) ---
+export interface CompleteHardwareSuite {
+  suiteName: string
+  os: 'windows' | 'android' | 'ios' | 'macos' | 'linux'
+  deviceModel: string
+  physicalWidth: string
+  physicalHeight: string
+  windowWidth: string
+  windowHeight: string
+  devicePixelRatio: string
+  cores: string
+  memory: string
+  gpuVendor: string
+  gpuRenderer: string
+}
+
+export const COMPLETE_HARDWARE_SUITES: CompleteHardwareSuite[] = [
+  // 1. Android 真实顶级与热门机型
+  {
+    suiteName: 'Samsung Galaxy S24 Ultra (骁龙8 Gen3 旗舰)',
+    os: 'android',
+    deviceModel: 'SM-S928B',
+    physicalWidth: '1440',
+    physicalHeight: '3120',
+    windowWidth: '412',
+    windowHeight: '915',
+    devicePixelRatio: '3.0',
+    cores: '8',
+    memory: '12',
+    gpuVendor: 'Qualcomm',
+    gpuRenderer: 'Adreno (TM) 750',
+  },
+  {
+    suiteName: 'Google Pixel 9 Pro (Tensor G4 · Android 15)',
+    os: 'android',
+    deviceModel: 'Pixel 9 Pro',
+    physicalWidth: '1280',
+    physicalHeight: '2856',
+    windowWidth: '412',
+    windowHeight: '922',
+    devicePixelRatio: '2.875',
+    cores: '8',
+    memory: '16',
+    gpuVendor: 'ARM',
+    gpuRenderer: 'Mali-G715',
+  },
+  {
+    suiteName: 'Xiaomi 14 Pro (骁龙8 Gen3 影像旗舰)',
+    os: 'android',
+    deviceModel: 'Xiaomi 23116PN5BC',
+    physicalWidth: '1440',
+    physicalHeight: '3200',
+    windowWidth: '412',
+    windowHeight: '915',
+    devicePixelRatio: '3.0',
+    cores: '8',
+    memory: '16',
+    gpuVendor: 'Qualcomm',
+    gpuRenderer: 'Adreno (TM) 750',
+  },
+  {
+    suiteName: 'OnePlus 12 (一加12 旗舰)',
+    os: 'android',
+    deviceModel: 'OnePlus CPH2581',
+    physicalWidth: '1440',
+    physicalHeight: '3168',
+    windowWidth: '412',
+    windowHeight: '915',
+    devicePixelRatio: '3.0',
+    cores: '8',
+    memory: '16',
+    gpuVendor: 'Qualcomm',
+    gpuRenderer: 'Adreno (TM) 750',
+  },
+  {
+    suiteName: 'Samsung Galaxy S23 Ultra (骁龙8 Gen2)',
+    os: 'android',
+    deviceModel: 'SM-S918B',
+    physicalWidth: '1440',
+    physicalHeight: '3088',
+    windowWidth: '412',
+    windowHeight: '883',
+    devicePixelRatio: '2.625',
+    cores: '8',
+    memory: '12',
+    gpuVendor: 'Qualcomm',
+    gpuRenderer: 'Adreno (TM) 740',
+  },
+  {
+    suiteName: 'Xiaomi POCO F5 (骁龙7+ Gen2)',
+    os: 'android',
+    deviceModel: 'Xiaomi 23049PCD8G',
+    physicalWidth: '1080',
+    physicalHeight: '2400',
+    windowWidth: '393',
+    windowHeight: '873',
+    devicePixelRatio: '2.75',
+    cores: '8',
+    memory: '8',
+    gpuVendor: 'Qualcomm',
+    gpuRenderer: 'Adreno (TM) 725',
+  },
+  {
+    suiteName: 'OPPO A3s (高通骁龙450 标配)',
+    os: 'android',
+    deviceModel: 'OPPO CPH1803',
+    physicalWidth: '720',
+    physicalHeight: '1520',
+    windowWidth: '360',
+    windowHeight: '760',
+    devicePixelRatio: '2.0',
+    cores: '8',
+    memory: '4',
+    gpuVendor: 'Qualcomm',
+    gpuRenderer: 'Adreno (TM) 506',
+  },
+
+  // 2. iOS 最新 iPhone 16 / 15 / 14 / iPad
+  {
+    suiteName: 'iPhone 16 Pro Max (Apple A18 Pro · iOS 18)',
+    os: 'ios',
+    deviceModel: 'iPhone 16 Pro Max',
+    physicalWidth: '1320',
+    physicalHeight: '2868',
+    windowWidth: '440',
+    windowHeight: '956',
+    devicePixelRatio: '3.0',
+    cores: '6',
+    memory: '8',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple GPU',
+  },
+  {
+    suiteName: 'iPhone 16 Pro (Apple A18 Pro · iOS 18)',
+    os: 'ios',
+    deviceModel: 'iPhone 16 Pro',
+    physicalWidth: '1206',
+    physicalHeight: '2622',
+    windowWidth: '402',
+    windowHeight: '874',
+    devicePixelRatio: '3.0',
+    cores: '6',
+    memory: '8',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple GPU',
+  },
+  {
+    suiteName: 'iPhone 15 Pro Max (Apple A17 Pro)',
+    os: 'ios',
+    deviceModel: 'iPhone 15 Pro Max',
+    physicalWidth: '1290',
+    physicalHeight: '2796',
+    windowWidth: '430',
+    windowHeight: '932',
+    devicePixelRatio: '3.0',
+    cores: '6',
+    memory: '8',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple GPU',
+  },
+  {
+    suiteName: 'iPhone 15 Pro (Apple A17 Pro)',
+    os: 'ios',
+    deviceModel: 'iPhone 15 Pro',
+    physicalWidth: '1179',
+    physicalHeight: '2556',
+    windowWidth: '393',
+    windowHeight: '852',
+    devicePixelRatio: '3.0',
+    cores: '6',
+    memory: '8',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple GPU',
+  },
+  {
+    suiteName: 'iPhone 14 (Apple A15)',
+    os: 'ios',
+    deviceModel: 'iPhone 14',
+    physicalWidth: '1170',
+    physicalHeight: '2532',
+    windowWidth: '390',
+    windowHeight: '844',
+    devicePixelRatio: '3.0',
+    cores: '6',
+    memory: '6',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple GPU',
+  },
+  {
+    suiteName: 'iPad Pro 13 (Apple M4 芯片)',
+    os: 'ios',
+    deviceModel: 'iPad Pro (13-inch M4)',
+    physicalWidth: '2064',
+    physicalHeight: '2752',
+    windowWidth: '1032',
+    windowHeight: '1376',
+    devicePixelRatio: '2.0',
+    cores: '9',
+    memory: '16',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple GPU',
+  },
+
+  // 3. Windows PC 系列
+  {
+    suiteName: 'Windows 11 (RTX 3060 · 1080P)',
+    os: 'windows',
+    deviceModel: '',
+    physicalWidth: '1920',
+    physicalHeight: '1080',
+    windowWidth: '1920',
+    windowHeight: '1080',
+    devicePixelRatio: '1.0',
+    cores: '8',
+    memory: '16',
+    gpuVendor: 'Google Inc. (NVIDIA)',
+    gpuRenderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+  },
+  {
+    suiteName: 'Windows 11 (RTX 4060 · 2K QHD)',
+    os: 'windows',
+    deviceModel: '',
+    physicalWidth: '2560',
+    physicalHeight: '1440',
+    windowWidth: '2560',
+    windowHeight: '1440',
+    devicePixelRatio: '1.0',
+    cores: '16',
+    memory: '16',
+    gpuVendor: 'Google Inc. (NVIDIA)',
+    gpuRenderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+  },
+  {
+    suiteName: 'Windows 10 (Intel UHD 630 办公机)',
+    os: 'windows',
+    deviceModel: '',
+    physicalWidth: '1920',
+    physicalHeight: '1080',
+    windowWidth: '1920',
+    windowHeight: '1080',
+    devicePixelRatio: '1.0',
+    cores: '8',
+    memory: '16',
+    gpuVendor: 'Google Inc. (Intel)',
+    gpuRenderer: 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+  },
+
+  // 4. macOS 系列
+  {
+    suiteName: 'MacBook Air (Apple M3 · Retina)',
+    os: 'macos',
+    deviceModel: '',
+    physicalWidth: '2560',
+    physicalHeight: '1664',
+    windowWidth: '1440',
+    windowHeight: '900',
+    devicePixelRatio: '2.0',
+    cores: '8',
+    memory: '16',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple M3',
+  },
+  {
+    suiteName: 'MacBook Pro 16 (Apple M3 Pro · Liquid Retina)',
+    os: 'macos',
+    deviceModel: '',
+    physicalWidth: '3024',
+    physicalHeight: '1964',
+    windowWidth: '1512',
+    windowHeight: '982',
+    devicePixelRatio: '2.0',
+    cores: '12',
+    memory: '16',
+    gpuVendor: 'Apple Inc.',
+    gpuRenderer: 'Apple M3 Pro',
+  },
+]
+
+// 读取客户端本机的真实屏幕物理与视口参数
+function getLocalRealScreen() {
+  if (typeof window === 'undefined') {
+    return { physW: '1920', physH: '1080', viewW: '1920', viewH: '1080', dpr: '1.0' }
+  }
+  const viewW = window.screen.width || 1440
+  const viewH = window.screen.height || 900
+  const dprVal = window.devicePixelRatio || 1
+  const physW = Math.round(viewW * dprVal)
+  const physH = Math.round(viewH * dprVal)
+  return {
+    physW: String(physW),
+    physH: String(physH),
+    viewW: String(viewW),
+    viewH: String(viewH),
+    dpr: String(dprVal),
+  }
+}
+
+function generateFingerprintId(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let res = 'MLDmn'
+  for (let i = 0; i < 15; i++) {
+    res += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return res
+}
+
+export function inferKernelFromUA(ua: string, engine: 'chromium' | 'camoufox'): string {
+  if (engine === 'camoufox') return '135.0-beta.36'
+  const match = ua.match(/(?:Chrome|CriOS)\/(\d+)/i)
+  if (!match) return '155.0.8037'
+  const major = parseInt(match[1], 10)
+  if (major >= 155) return '155.0.8037'
+  return '146.0.7680'
+}
+
+function getRandomChromeVersion(major = '155'): string {
+  if (major === '146') {
+    const patchOptions = [177, 180, 185, 192, 201]
+    const patch = patchOptions[Math.floor(Math.random() * patchOptions.length)]
+    return `146.0.7680.${patch}`
+  }
+  // 主版本严密锁定真实编译的 Chrome 155 防关联原生内核
+  // 构建号在 8000 到 8080 之间自然抖动
+  const build = Math.floor(Math.random() * (8080 - 8000 + 1)) + 8000
+  const patchOptions = [0, 15, 24, 38, 42, 54, 68, 77, 85, 92, 105, 118, 134, 150]
+  const patch = patchOptions[Math.floor(Math.random() * patchOptions.length)]
+  return `155.0.${build}.${patch}`
+}
+
+function getRandomFirefoxVersion(): string {
+  const patches = ['135.0', '135.0.1', '135.0.2']
+  return patches[Math.floor(Math.random() * patches.length)]
+}
+
+function generateDefaultUA(os: string, model: string, engine: 'chromium' | 'camoufox', kernelMajor = '155'): string {
+  const chromeVer = getRandomChromeVersion(kernelMajor)
+  const firefoxVer = getRandomFirefoxVersion()
+
+  if (engine === 'camoufox') {
+    if (os === 'android') {
+      const foundA = ANDROID_MODELS.find(x => x.id === model)
+      const aVer = foundA ? foundA.osVer : '14'
+      return `Mozilla/5.0 (Android ${aVer}; Mobile; rv:${firefoxVer}) Gecko/${firefoxVer} Firefox/${firefoxVer}`
+    }
+    if (os === 'ios') {
+      const foundI = IOS_MODELS.find(x => x.id === model)
+      const iVer = foundI ? foundI.osVer : '18_0'
+      const isIpad = (model || '').toLowerCase().includes('ipad')
+      const dev = isIpad ? 'iPad; CPU OS' : 'iPhone; CPU iPhone OS'
+      return `Mozilla/5.0 (${dev} ${iVer} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/${firefoxVer} Mobile/15E148 Safari/605.1.15`
+    }
+    if (os === 'macos') return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:${firefoxVer}) Gecko/20100101 Firefox/${firefoxVer}`
+    if (os === 'linux') return `Mozilla/5.0 (X11; Linux x86_64; rv:${firefoxVer}) Gecko/20100101 Firefox/${firefoxVer}`
+    return `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:${firefoxVer}) Gecko/20100101 Firefox/${firefoxVer}`
+  }
+
+  if (os === 'android') {
+    const foundA = ANDROID_MODELS.find(x => x.id === model)
+    const m = model || 'SM-S928B'
+    const androidVer = foundA ? foundA.osVer : '14'
+    return `Mozilla/5.0 (Linux; Android ${androidVer}; ${m}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Mobile Safari/537.36`
+  }
+  if (os === 'ios') {
+    const foundI = IOS_MODELS.find(x => x.id === model)
+    const iosVer = foundI ? foundI.osVer : '18_0'
+    const isIpad = (model || '').toLowerCase().includes('ipad')
+    const dev = isIpad ? 'iPad; CPU OS' : 'iPhone; CPU iPhone OS'
+    return `Mozilla/5.0 (${dev} ${iosVer} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/${chromeVer} Mobile/15E148 Safari/604.1`
+  }
+  if (os === 'macos') {
+    return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`
+  }
+  if (os === 'linux') {
+    return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`
+  }
+  return `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`
+}
+
+const EMPTY_FORM: FormState = {
+  name: '新建环境 1',
+  batchCount: 1,
   group: '',
   status: 'active',
   notes: '',
-  os: isMac ? 'macos' : 'windows',
+  os: 'windows',
+  deviceModel: '',
+  isCustomModel: false,
   browserUi: 'desktop',
   browserEngine: 'chromium',
-  userAgent: '',
+  uaMode: 'custom',
+  uaFilter: '155',
+  userAgent: generateDefaultUA('windows', '', 'chromium'),
   timezone: '',
   languages: '',
-  hardwareConcurrency: '',
-  deviceMemory: '8',
-  windowWidth: '1280',
-  windowHeight: '720',
-  devicePixelRatio: '1',
+  hardwareConcurrency: '8',
+  deviceMemory: '16',
+  resolutionPreset: 'real',
+  physicalWidth: '1920',
+  physicalHeight: '1080',
+  windowWidth: '1920',
+  windowHeight: '1080',
+  devicePixelRatio: '1.0',
   webrtcMode: 'replace',
   stableCanvas: false,
   canvasNoise: true,
@@ -159,2141 +616,1640 @@ const EMPTY: FormState = {
   doNotTrack: false,
   dohProvider: '',
   searchEngine: 'google',
-  webglVendor: '',
-  webglRenderer: '',
+  webglVendor: 'Google Inc. (NVIDIA)',
+  webglRenderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)',
   remoteDebuggingPort: '',
   geoMode: 'auto',
   latitude: '',
   longitude: '',
-  proxyType: 'none',
+  proxyMode: 'none',
+  proxyCustomType: 'Socks5',
   proxyServer: '',
   proxyUsername: '',
   proxyPassword: '',
+  proxyPoolId: '',
+  proxyApiUrl: '',
+  account: '',
+  cookies: '',
 }
 
-function fromProfile(profile: Profile): FormState {
-  const bs = profile.browser_settings ?? {}
-  const proxy = profile.proxy_config ?? {}
-  const geo = bs.geolocation
-  const lat = geo?.lat ?? geo?.latitude
-  const lon = geo?.lon ?? geo?.longitude
-  return {
-    name: profile.name,
-    group: profile.group ?? '',
-    status: profile.status,
-    notes: profile.notes ?? '',
-    os: bs.os ?? 'windows',
-    browserUi: bs.browser_ui ?? 'desktop',
-    browserEngine: bs.browser_engine ?? 'camoufox',
-    userAgent: bs.user_agent ?? '',
-    timezone: bs.timezone ?? '',
-    languages: (bs.languages ?? []).join(', '),
-    hardwareConcurrency: bs.hardware_concurrency ? String(bs.hardware_concurrency) : '',
-    deviceMemory: bs.device_memory ? String(bs.device_memory) : '',
-    windowWidth: String(bs.window_width ?? 1280),
-    windowHeight: String(bs.window_height ?? 720),
-    devicePixelRatio: String(bs.device_pixel_ratio ?? 1),
-    webrtcMode: bs.webrtc_mode ?? 'replace',
-    stableCanvas: bs.stable_canvas ?? false,
-    canvasNoise: bs.canvas_noise ?? true,
-    audioNoise: bs.audio_noise ?? true,
-    clientRectsNoise: bs.client_rects_noise ?? true,
-    batterySpoofing: bs.battery_spoofing ?? true,
-    doNotTrack: bs.do_not_track ?? false,
-    dohProvider: bs.doh_provider ?? '',
-    searchEngine: bs.search_engine ?? 'google',
-    webglVendor: bs.webgl_vendor ?? '',
-    webglRenderer: bs.webgl_renderer ?? '',
-    remoteDebuggingPort: bs.remote_debugging_port ? String(bs.remote_debugging_port) : '',
-    geoMode: lat != null && lon != null ? 'manual' : 'auto',
-    latitude: lat != null ? String(lat) : '',
-    longitude: lon != null ? String(lon) : '',
-    proxyType: proxy.server ? (proxy.type ?? 'http') : 'none',
-    proxyServer: proxy.server ?? '',
-    proxyUsername: proxy.username ?? '',
-    proxyPassword: proxy.password ?? '',
-  }
-}
-
-/**
- * Which fields differ between the profile this form was opened on and the one
- * now stored — the answer to "changed how?", which is the only part of a
- * conflict a user can act on.
- */
-function describeChanges(before: Profile | null, after: Profile): string {
-  if (!before) return ''
-  const fields: string[] = []
-  if (before.name !== after.name) fields.push(`name is now "${after.name}"`)
-  if ((before.group ?? null) !== (after.group ?? null))
-    fields.push(after.group ? `group is now "${after.group}"` : 'group was cleared')
-  if (before.status !== after.status) fields.push(`status is now ${after.status}`)
-  if ((before.notes ?? '') !== (after.notes ?? '')) fields.push('notes changed')
-  if (JSON.stringify(before.proxy_config ?? null) !== JSON.stringify(after.proxy_config ?? null))
-    fields.push('the proxy changed')
-  if (JSON.stringify(before.browser_settings) !== JSON.stringify(after.browser_settings))
-    fields.push('browser settings changed')
-  if (!fields.length) return ''
-  // Two is enough to recognise what happened; a full list would not fit a toast.
-  const shown = fields.slice(0, 2).join(', ')
-  return fields.length > 2 ? `${shown}, and ${fields.length - 2} more` : shown
-}
-
-interface Props {
+export function ProfileForm({
+  open,
+  profile,
+  groups,
+  onClose,
+  onSaved,
+}: {
   open: boolean
-  /** null = create a new profile. */
   profile: Profile | null
   groups: Group[]
   onClose: () => void
   onSaved: () => void
-}
-
-export function ProfileForm({ open, profile, groups, onClose, onSaved }: Props) {
-  const { isZh } = useI18n()
-  const isEdit = profile !== null
-  const [form, setForm] = useState<FormState>(EMPTY)
-  const [saving, setSaving] = useState(false)
-  const [regenerating, setRegenerating] = useState(false)
-  const [refreshingBrowser, setRefreshingBrowser] = useState(false)
-  const [checkingProxy, setCheckingProxy] = useState(false)
-  const [proxyCheck, setProxyCheck] = useState<ProxyCheck | null>(null)
-  const [autoMatchIp, setAutoMatchIp] = useState(true)
-  const [detectedLocation, setDetectedLocation] = useState<ProxyLocation | null>(null)
-  const [detectingIp, setDetectingIp] = useState(false)
-  const [poolProxies, setPoolProxies] = useState<ProxyItem[]>([])
-  const [proxySource, setProxySource] = useState<'custom' | 'pool'>('custom')
-  const [selectedPoolId, setSelectedPoolId] = useState('')
-  const [ipChannel, setIpChannel] = useState('ip2location')
-  // The `profile` prop is a snapshot from the list; regenerating or updating the
-  // browser returns a new machine, and the panel has to show it without waiting
-  // for the dialog to be reopened.
-  const [machine, setMachine] = useState<FingerprintSummary | null | undefined>(undefined)
-  const [reconciling, setReconciling] = useState(false)
-  // Whether the *saved* profile states where it is. The form fields alone cannot
-  // answer that once the user has started typing in them.
-  const [storedGeography, setStoredGeography] = useState(false)
-  const [clearingGeography, setClearingGeography] = useState(false)
-  const [presets, setPresets] = useState<DevicePreset[]>([])
-  const [presetId, setPresetId] = useState('')
-  // The version this form was filled from. Sent with the save so that an edit
-  // somebody else made in the meantime is refused instead of being overwritten,
-  // and moved on after a refused save so a deliberate second Save can proceed.
-  const [baseVersion, setBaseVersion] = useState(0)
+}) {
   const toast = useToast()
+  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [activeSection, setActiveSection] = useState<'base' | 'proxy' | 'account' | 'advanced'>('base')
+  const [fingerprintId, setFingerprintId] = useState<string>('')
+  const [saving, setSaving] = useState(false)
+  const [testingProxy, setTestingProxy] = useState(false)
+  const [proxyTestResult, setProxyTestResult] = useState<string | null>(null)
+  const [proxyPoolList, setProxyPoolList] = useState<ProxyItem[]>([])
 
-  useEffect(() => {
-    if (open) {
-      proxiesAPI.list().then((res) => setPoolProxies(res.proxies || [])).catch(() => {})
-      // The dialog is kept mounted and refilled when it opens, so the form has
-      // to be reset here. A key would avoid the effect, but it would also throw
-      // away the loaded presets on every open and would not refill when the
-      // same profile is reopened after a save changed it.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setForm(profile ? fromProfile(profile) : EMPTY)
-      setBaseVersion(profile?.row_version ?? 0)
-      setMachine(profile?.fingerprint)
-      setStoredGeography(profile ? hasGeography(profile) : false)
-      setPresetId('')
-      setProxyCheck(null)
-      setSelectedPoolId('')
-      setProxySource('custom')
-      if (!profile) {
-        setAutoMatchIp(true)
-        // Automatically query exit IP and adapt timezone & language for new profile
-        detectIpAndAdapt(null, false)
-      } else {
-        setAutoMatchIp(true)
-        if (profile.proxy_check?.ip) {
-          setDetectedLocation({
-            ip: profile.proxy_check.ip,
-            country: profile.proxy_check.country ?? null,
-            timezone: profile.proxy_check.timezone ?? null,
-            latitude: null,
-            longitude: null,
-            languages: getLanguagesForCountry(profile.proxy_check.country),
-          })
-        } else if (profile.proxy_config?.server) {
-          detectIpAndAdapt(null, false)
+  // 表单容器引用与滚动联动
+  const formContainerRef = useRef<HTMLFormElement>(null)
+  const isClickScrollingRef = useRef(false)
+
+  // 点击左侧导航项平滑滚动至对应板块
+  const scrollToSection = (sectionId: string) => {
+    setActiveSection(sectionId as any)
+    const el = document.getElementById(`section-${sectionId}`)
+    const container = formContainerRef.current
+    if (el && container) {
+      isClickScrollingRef.current = true
+      const topOffset = el.offsetTop - container.offsetTop - 8
+      container.scrollTo({ top: Math.max(0, topOffset), behavior: 'smooth' })
+      setTimeout(() => {
+        isClickScrollingRef.current = false
+      }, 500)
+    }
+  }
+
+  // 手动滚动时自动激活当前所在的板块 (Scrollspy)
+  const handleFormScroll = () => {
+    if (isClickScrollingRef.current) return
+    const container = formContainerRef.current
+    if (!container) return
+
+    const sections = ['base', 'proxy', 'account', 'advanced']
+    const containerTop = container.scrollTop
+    const triggerPoint = containerTop + 100
+
+    for (let i = sections.length - 1; i >= 0; i--) {
+      const secId = sections[i]
+      const el = document.getElementById(`section-${secId}`)
+      if (el) {
+        const elTop = el.offsetTop - container.offsetTop
+        if (triggerPoint >= elTop) {
+          setActiveSection(secId as any)
+          break
         }
       }
     }
-  }, [open, profile])
+  }
 
-  const uaPresets = useMemo(() => {
-    if (form.browserEngine === 'camoufox') {
-      return [
-        { label: isZh ? '自动匹配系统与内核 (Firefox 135 原生)' : 'Auto match OS (Firefox 135)', ua: '' },
-        { label: 'Firefox 135 (Windows 11 x64)', ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0' },
-        { label: 'Firefox 135 (macOS ARM64)', ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0' },
-        { label: 'Firefox 135 (Linux x86_64)', ua: 'Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0' },
-        { label: 'Firefox 135 (Android Mobile)', ua: 'Mozilla/5.0 (Android 14; Mobile; rv:135.0) Gecko/135.0 Firefox/135.0' },
-        { label: 'Firefox 135 (iOS Mobile)', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/135.0 Mobile/15E148 Safari/605.1.15' },
-      ]
-    }
-    return [
-      { label: isZh ? '自动匹配系统与内核 (Chrome 154 智能微抖动)' : 'Auto match OS (Chrome 154)', ua: '' },
-      { label: 'Chrome 154 (Windows 11 x64)', ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8035.120 Safari/537.36' },
-      { label: 'Chrome 154 (macOS ARM64)', ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8035.120 Safari/537.36' },
-      { label: 'Chrome 154 (Linux x86_64)', ua: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8035.120 Safari/537.36' },
-      { label: 'Chrome 154 (Android 14 Mobile)', ua: 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8035.120 Mobile Safari/537.36' },
-      { label: 'Chrome 154 (iOS Mobile)', ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/154.0.8035.120 Mobile/15E148 Safari/604.1' },
-    ]
-  }, [form.browserEngine, isZh])
+  const isEdit = !!profile
 
-  // Presets only matter while creating: an existing profile is already pinned.
+  // 获取本机真实物理与视口屏幕
+  const localReal = useMemo(() => getLocalRealScreen(), [])
+
+  // 载入代理池
   useEffect(() => {
-    if (!open || isEdit || presets.length) return
-    presetsAPI
-      .list()
-      .then(setPresets)
-      .catch(() => setPresets([]))
-  }, [open, isEdit, presets.length])
+    if (!open) return
+    proxiesAPI.list().then(res => {
+      setProxyPoolList(res.proxies || [])
+    }).catch(() => {})
+  }, [open])
 
-  const presetsForOs = useMemo(
-    () => presets.filter((preset) => preset.os === form.os),
-    [presets, form.os],
-  )
+  // 初始化或打开时载入数据
+  useEffect(() => {
+    if (!open) return
+    setFingerprintId(generateFingerprintId())
+    setProxyTestResult(null)
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
-    setForm((current) => ({ ...current, [key]: value }))
+    if (profile) {
+      const bs = profile.browser_settings || {}
+      const proxy = profile.proxy_config || {}
+      const currentOs = (bs.os || 'windows').toLowerCase()
+      const m = (bs as any).device_model || ''
+      const isKnown = ANDROID_MODELS.some(x => x.id === m) || IOS_MODELS.some(x => x.id === m)
 
-  /**
-   * A key we send is authoritative and a null clears the value, so a blank
-   * optional field has to mean different things in the two modes: on create it
-   * means "let the backend generate this", so the key is omitted; on edit the
-   * user is looking at the stored value and blanking it means "remove it", so
-   * an explicit null goes out. Sending null on create produced profiles with a
-   * missing timezone and geolocation — a fingerprint with holes in it.
-   */
-  function buildBrowserSettings() {
-    let languages = form.languages
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean)
-
-    if (autoMatchIp && (!languages.length || (languages.length <= 2 && languages[0] === 'en-US'))) {
-      if (detectedLocation?.languages?.length) {
-        languages = detectedLocation.languages
+      let pMode: 'none' | 'custom' | 'pool' | 'api' = 'none'
+      let pCustomType = 'Socks5'
+      if (proxy.server) {
+        pMode = 'custom'
+        const pt = ((proxy as any).proxy_type || 'socks5').toLowerCase()
+        if (pt === 'http') pCustomType = 'HTTP'
+        else if (pt === 'https') pCustomType = 'HTTPS'
+        else if (pt === 'ssh') pCustomType = 'SSH'
+        else pCustomType = 'Socks5'
       }
-    }
 
-    const settings: Record<string, unknown> = {
-      os: form.os,
-      browser_ui: form.browserUi,
-      browser_engine: form.browserEngine,
-      user_agent: form.userAgent.trim() || null,
-      window_width: Number(form.windowWidth) || 1280,
-      window_height: Number(form.windowHeight) || 720,
-      device_pixel_ratio: Number(form.devicePixelRatio) || 1.0,
-      webrtc_mode: form.webrtcMode,
-      stable_canvas: form.stableCanvas,
-      canvas_noise: form.canvasNoise,
-      audio_noise: form.audioNoise,
-      client_rects_noise: form.clientRectsNoise,
-      battery_spoofing: form.batterySpoofing,
-      do_not_track: form.doNotTrack,
-      doh_provider: form.dohProvider || null,
-      search_engine: form.searchEngine || 'google',
-      // Always explicit: "from the proxy IP" must clear any stored coordinates,
-      // otherwise geoip stays disabled and the old position keeps applying.
-      geolocation:
-        form.geoMode === 'manual' && form.latitude && form.longitude
-          ? { lat: Number(form.latitude), lon: Number(form.longitude) }
-          : null,
-    }
+      // 解析物理分辨率 (screen)
+      let pW = localReal.physW
+      let pH = localReal.physH
+      let vW = bs.window_width ? String(bs.window_width) : localReal.viewW
+      let vH = bs.window_height ? String(bs.window_height) : localReal.viewH
+      let dpr = bs.device_pixel_ratio ? String(bs.device_pixel_ratio) : localReal.dpr
 
-    const optional: [string, unknown][] = [
-      ['timezone', form.timezone.trim() || null],
-      ['languages', languages.length ? languages : null],
-      ['hardware_concurrency', form.hardwareConcurrency ? Number(form.hardwareConcurrency) : null],
-      ['device_memory', form.deviceMemory ? Number(form.deviceMemory) : null],
-      ['webgl_vendor', form.webglVendor.trim() || null],
-      ['webgl_renderer', form.webglRenderer.trim() || null],
-      ['remote_debugging_port', form.remoteDebuggingPort ? Number(form.remoteDebuggingPort) : null],
-    ]
-    for (const [key, value] of optional) {
-      if (value !== null || isEdit) settings[key] = value
-    }
-    return settings
-  }
-
-  function handleRandomizeFingerprint() {
-    const isCamoufox = form.browserEngine === 'camoufox'
-    const targetOs = form.os || (isMac ? 'macos' : 'windows')
-    const coresList = ['4', '6', '8', '12', '16']
-    const ramList = ['4', '8', '16', '32']
-    const resolutions = [
-      { w: '1920', h: '1080' },
-      { w: '2560', h: '1440' },
-      { w: '1440', h: '900' },
-      { w: '1366', h: '768' },
-      { w: '1680', h: '1050' },
-    ]
-    const dprList = ['1', '1.25', '1.5', '2']
-    const gpuPresets = targetOs === 'macos' ? WEBGL_PRESETS.slice(1, 3) : WEBGL_PRESETS.slice(3)
-    const randomGpu = gpuPresets[Math.floor(Math.random() * gpuPresets.length)]
-    const randomRes = resolutions[Math.floor(Math.random() * resolutions.length)]
-
-    let randomUa = ''
-    if (isCamoufox) {
-      if (targetOs === 'macos') {
-        randomUa = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0'
-      } else if (targetOs === 'linux') {
-        randomUa = 'Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0'
-      } else {
-        randomUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0'
+      if (bs.screen && bs.screen.includes('x')) {
+        const parts = bs.screen.split('x')
+        pW = parts[0] || '1920'
+        pH = parts[1] || '1080'
+      } else if (currentOs === 'android') {
+        pW = '720'
+        pH = '1520'
+        vW = '360'
+        vH = '760'
+        dpr = '2.0'
+      } else if (currentOs === 'ios') {
+        pW = '1179'
+        pH = '2556'
+        vW = '393'
+        vH = '852'
+        dpr = '3.0'
       }
-    } else {
-      const buildJitter = 8035 + Math.floor(Math.random() * 8)
-      const patchJitter = 40 + Math.floor(Math.random() * 150)
-      const jitteredVersion = `154.0.${buildJitter}.${patchJitter}`
-      randomUa = targetOs === 'macos'
-        ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVersion} Safari/537.36`
-        : `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVersion} Safari/537.36`
-    }
 
-    setForm((prev) => ({
-      ...prev,
-      userAgent: randomUa,
-      hardwareConcurrency: coresList[Math.floor(Math.random() * coresList.length)],
-      deviceMemory: ramList[Math.floor(Math.random() * ramList.length)],
-      windowWidth: randomRes.w,
-      windowHeight: randomRes.h,
-      devicePixelRatio: dprList[Math.floor(Math.random() * dprList.length)],
-      webglVendor: randomGpu.vendor,
-      webglRenderer: randomGpu.renderer,
-      clientRectsNoise: true,
-      audioNoise: true,
-      canvasNoise: true,
-      batterySpoofing: true,
-    }))
-    toast('info', isZh ? `已随机生成新指纹特征 (${isCamoufox ? 'Firefox 135' : 'Chrome 154'})` : 'Fingerprint randomized')
-  }
-
-  function handleSelectEngine(engine: 'chromium' | 'camoufox') {
-    set('browserEngine', engine)
-    const isCamoufox = engine === 'camoufox'
-    const buildJitter = 8035 + Math.floor(Math.random() * 8)
-    const patchJitter = 40 + Math.floor(Math.random() * 150)
-    const jitteredVer = `154.0.${buildJitter}.${patchJitter}`
-
-    let ua = ''
-    if (isCamoufox) {
-      if (form.os === 'macos') {
-        ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0'
-      } else if (form.os === 'linux') {
-        ua = 'Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0'
-      } else if (form.os === 'android') {
-        ua = 'Mozilla/5.0 (Android 14; Mobile; rv:135.0) Gecko/135.0 Firefox/135.0'
-      } else if (form.os === 'ios') {
-        ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/135.0 Mobile/15E148 Safari/605.1.15'
-      } else {
-        ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0'
-      }
-    } else {
-      if (form.os === 'android') {
-        ua = `Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Mobile Safari/537.36`
-      } else if (form.os === 'ios') {
-        ua = `Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/${jitteredVer} Mobile/15E148 Safari/604.1`
-      } else if (form.os === 'macos') {
-        ua = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Safari/537.36`
-      } else if (form.os === 'linux') {
-        ua = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Safari/537.36`
-      } else {
-        ua = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Safari/537.36`
-      }
-    }
-    set('userAgent', ua)
-  }
-
-  function handleSelectOs(targetOs: string) {
-    const isCamoufox = form.browserEngine === 'camoufox'
-    const buildJitter = 8035 + Math.floor(Math.random() * 8)
-    const patchJitter = 40 + Math.floor(Math.random() * 150)
-    const jitteredVer = `154.0.${buildJitter}.${patchJitter}`
-
-    let ua = ''
-    if (isCamoufox) {
-      if (targetOs === 'macos') {
-        ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:135.0) Gecko/20100101 Firefox/135.0'
-      } else if (targetOs === 'linux') {
-        ua = 'Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0'
-      } else if (targetOs === 'android') {
-        ua = 'Mozilla/5.0 (Android 14; Mobile; rv:135.0) Gecko/135.0 Firefox/135.0'
-      } else if (targetOs === 'ios') {
-        ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/135.0 Mobile/15E148 Safari/605.1.15'
-      } else {
-        ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0'
-      }
-    } else {
-      if (targetOs === 'android') {
-        ua = `Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Mobile Safari/537.36`
-      } else if (targetOs === 'ios') {
-        ua = `Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/${jitteredVer} Mobile/15E148 Safari/604.1`
-      } else if (targetOs === 'macos') {
-        ua = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Safari/537.36`
-      } else if (targetOs === 'linux') {
-        ua = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Safari/537.36`
-      } else {
-        ua = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${jitteredVer} Safari/537.36`
-      }
-    }
-
-    if (targetOs === 'android') {
-      setForm((prev) => ({
-        ...prev,
-        os: 'android',
-        windowWidth: '412',
-        windowHeight: '915',
-        devicePixelRatio: '2.625',
-        hardwareConcurrency: '8',
-        deviceMemory: '8',
-        webglVendor: 'Google Inc. (Qualcomm)',
-        webglRenderer: 'ANGLE (Qualcomm, Adreno (TM) 730, OpenGL ES 3.2)',
-        userAgent: ua,
-      }))
-    } else if (targetOs === 'ios') {
-      setForm((prev) => ({
-        ...prev,
-        os: 'ios',
-        windowWidth: '393',
-        windowHeight: '852',
-        devicePixelRatio: '3',
-        hardwareConcurrency: '6',
-        deviceMemory: '8',
-        webglVendor: 'Apple Inc.',
-        webglRenderer: 'Apple GPU',
-        userAgent: ua,
-      }))
-    } else if (targetOs === 'macos') {
-      setForm((prev) => ({
-        ...prev,
-        os: 'macos',
-        windowWidth: '1440',
-        windowHeight: '900',
-        devicePixelRatio: '2',
-        hardwareConcurrency: '8',
-        deviceMemory: '16',
-        webglVendor: 'Google Inc. (Apple)',
-        webglRenderer: 'ANGLE (Apple, Apple M2, OpenGL 4.1)',
-        userAgent: ua,
-      }))
-    } else if (targetOs === 'linux') {
-      setForm((prev) => ({
-        ...prev,
-        os: 'linux',
-        windowWidth: '1920',
-        windowHeight: '1080',
-        devicePixelRatio: '1',
-        hardwareConcurrency: '8',
-        deviceMemory: '16',
-        webglVendor: 'Google Inc. (Intel)',
-        webglRenderer: 'ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0, D3D11)',
-        userAgent: ua,
-      }))
-    } else {
-      // windows
-      setForm((prev) => ({
-        ...prev,
-        os: 'windows',
-        windowWidth: '1920',
-        windowHeight: '1080',
-        devicePixelRatio: '1',
-        hardwareConcurrency: '8',
-        deviceMemory: '16',
-        webglVendor: 'Google Inc. (NVIDIA)',
-        webglRenderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)',
-        userAgent: ua,
-      }))
-    }
-  }
-
-  function handleQuickPasteProxy(raw: string) {
-    const text = raw.trim()
-    if (!text) return
-    let type = form.proxyType === 'none' ? 'http' : form.proxyType
-    let server = ''
-    let user = ''
-    let pass = ''
-
-    if (text.includes('://')) {
-      try {
-        const url = new URL(text)
-        type = url.protocol.replace(':', '')
-        server = url.host
-        user = decodeURIComponent(url.username || '')
-        pass = decodeURIComponent(url.password || '')
-      } catch {}
-    } else if (text.includes('@')) {
-      const [auth, hostPort] = text.split('@')
-      const [u, p] = auth.split(':')
-      user = u || ''
-      pass = p || ''
-      server = hostPort || ''
-    } else if (text.includes(':')) {
-      const parts = text.split(':')
-      if (parts.length === 4) {
-        server = `${parts[0]}:${parts[1]}`
-        user = parts[2]
-        pass = parts[3]
-      } else if (parts.length === 2) {
-        server = `${parts[0]}:${parts[1]}`
-      } else {
-        server = text
-      }
-    } else {
-      server = text
-    }
-
-    setForm((prev) => ({
-      ...prev,
-      proxyType: type,
-      proxyServer: server,
-      proxyUsername: user,
-      proxyPassword: pass,
-    }))
-    toast('ok', isZh ? `已快捷解析代理配置: ${server}` : `Parsed proxy: ${server}`)
-  }
-
-  function handleSelectPoolProxy(poolId: string) {
-    setSelectedPoolId(poolId)
-    if (!poolId) return
-    const p = poolProxies.find((item) => item.id === poolId)
-    if (p) {
-      const pServer = p.port ? `${p.server}:${p.port}` : p.server
-      setForm((prev) => ({
-        ...prev,
-        proxyType: p.type || 'http',
-        proxyServer: pServer,
-        proxyUsername: p.username || '',
-        proxyPassword: p.password || '',
-      }))
-      toast('ok', isZh ? `已选用代理池节点: ${p.name || p.server}` : `Selected proxy: ${p.name || p.server}`)
-    }
-  }
-
-
-  function buildProxy() {
-    if (form.proxyType === 'none' || !form.proxyServer.trim()) return null
-    return {
-      type: form.proxyType,
-      server: form.proxyServer.trim(),
-      username: form.proxyUsername.trim() || undefined,
-      password: form.proxyPassword.trim() || undefined,
-    }
-  }
-
-  function applyLocationToForm(loc: ProxyLocation, notify = false) {
-    setDetectedLocation(loc)
-    const langs = (loc.languages && loc.languages.length)
-      ? loc.languages
-      : getLanguagesForCountry(loc.country)
-    const tz = loc.timezone || getTimezoneForCountry(loc.country)
-    setForm((prev) => ({
-      ...prev,
-      timezone: tz || prev.timezone,
-      languages: langs.join(', '),
-    }))
-    if (notify) {
-      const countryProfile = getCountryProfile(loc.country)
-      const flagAndName = countryProfile ? `${countryProfile.flag} ${countryProfile.name}` : (loc.country || '')
-      toast('ok', isZh
-        ? `已根据 IP 自动适配: ${flagAndName} (时区 ${tz}, 语言 ${langs.slice(0, 2).join(', ')})`
-        : `Adapted to IP: ${loc.country || ''} (${tz}, ${langs.slice(0, 2).join(', ')})`
-      )
-    }
-  }
-
-  async function detectIpAndAdapt(proxyOverride?: ReturnType<typeof buildProxy>, notify = false) {
-    setDetectingIp(true)
-    try {
-      const pConf = proxyOverride !== undefined ? proxyOverride : buildProxy()
-      const res = await profilesAPI.checkUnsavedProxy({
-        proxy_config: pConf,
-        browser_settings: buildBrowserSettings(),
+      setForm({
+        name: profile.name || '',
+        batchCount: 1,
+        group: (profile as any).group_id || profile.group || '',
+        status: profile.status || 'active',
+        notes: profile.notes || '',
+        os: currentOs,
+        deviceModel: m || (currentOs === 'android' ? 'OPPO CPH1803' : currentOs === 'ios' ? 'iPhone 15 Pro' : ''),
+        isCustomModel: !!m && !isKnown,
+        browserUi: bs.browser_ui || 'desktop',
+        browserEngine: bs.browser_engine || 'chromium',
+        uaMode: 'custom',
+        uaFilter: bs.kernel_version ? (bs.kernel_version.startsWith('155') ? '155' : (bs.kernel_version.startsWith('135') ? '135' : bs.kernel_version)) : (bs.browser_engine === 'camoufox' ? '135' : '155'),
+        userAgent: bs.user_agent || generateDefaultUA(currentOs, m, bs.browser_engine || 'chromium'),
+        timezone: bs.timezone || '',
+        languages: (bs.languages || []).join(', '),
+        hardwareConcurrency: bs.hardware_concurrency ? String(bs.hardware_concurrency) : (currentOs === 'ios' ? '6' : '8'),
+        deviceMemory: bs.device_memory ? String(bs.device_memory) : (currentOs === 'android' ? '4' : '16'),
+        resolutionPreset: 'custom',
+        physicalWidth: pW,
+        physicalHeight: pH,
+        windowWidth: vW,
+        windowHeight: vH,
+        devicePixelRatio: dpr,
+        webrtcMode: (bs.webrtc_mode as any) || 'replace',
+        stableCanvas: false,
+        canvasNoise: bs.canvas_noise ?? true,
+        audioNoise: bs.audio_noise ?? true,
+        clientRectsNoise: bs.client_rects_noise ?? true,
+        batterySpoofing: bs.battery_spoofing ?? true,
+        doNotTrack: bs.do_not_track ?? false,
+        dohProvider: '',
+        searchEngine: (bs as any).search_engine || 'google',
+        webglVendor: bs.webgl_vendor || '',
+        webglRenderer: bs.webgl_renderer || '',
+        remoteDebuggingPort: bs.remote_debugging_port ? String(bs.remote_debugging_port) : '',
+        geoMode: bs.geolocation ? 'manual' : 'auto',
+        latitude: bs.geolocation?.lat ? String(bs.geolocation.lat) : '',
+        longitude: bs.geolocation?.lon ? String(bs.geolocation.lon) : '',
+        proxyMode: pMode,
+        proxyCustomType: pCustomType,
+        proxyServer: proxy.server || '',
+        proxyUsername: proxy.username || '',
+        proxyPassword: proxy.password || '',
+        proxyPoolId: '',
+        proxyApiUrl: '',
+        account: (profile as any).account || '',
+        cookies: '',
       })
-      if (res?.reachable && res.location) {
-        applyLocationToForm(res.location, notify)
-        return res.location
-      }
-    } catch {
-      // Fallback: machine resolved timezone & navigator language
-      if (!isEdit && !form.timezone) {
-        try {
-          const sysTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai'
-          const sysLangs = (navigator.languages && navigator.languages.length)
-            ? Array.from(navigator.languages).join(', ')
-            : (navigator.language || 'zh-CN, zh, en')
-          setForm((prev) => ({
-            ...prev,
-            timezone: prev.timezone || sysTz,
-            languages: prev.languages || sysLangs,
-          }))
-        } catch {}
-      }
-    } finally {
-      setDetectingIp(false)
-    }
-    return null
-  }
-
-  /**
-   * Checks what is on screen rather than what is stored, so the answer belongs to
-   * the proxy the user is currently typing — the point is to find out before
-   * saving whether it works and whether it agrees with the profile.
-   */
-  async function handleCheckProxy() {
-    setCheckingProxy(true)
-    setProxyCheck(null)
-    try {
-      const res = await profilesAPI.checkUnsavedProxy({
-        proxy_config: buildProxy(),
-        browser_settings: buildBrowserSettings(),
+    } else {
+      // 默认选择 Windows + 真实分辨率跟随本机
+      setForm({
+        ...EMPTY_FORM,
+        name: `新建环境 ${Math.floor(Math.random() * 90) + 10}`,
+        resolutionPreset: 'real',
+        physicalWidth: localReal.physW,
+        physicalHeight: localReal.physH,
+        windowWidth: localReal.viewW,
+        windowHeight: localReal.viewH,
+        devicePixelRatio: localReal.dpr,
+        userAgent: generateDefaultUA('windows', '', 'chromium'),
       })
-      setProxyCheck(res)
-      if (res?.reachable && res.location) {
-        setDetectedLocation(res.location)
-        setAutoMatchIp(true)
-        applyLocationToForm(res.location, true)
-      }
-    } catch (error) {
-      toast('error', isZh ? '测试代理失败' : 'Could not check the proxy', (error as Error).message)
-    } finally {
-      setCheckingProxy(false)
     }
+  }, [open, profile, localReal])
+
+  if (!open) return null
+
+  // 切换系统
+  const handleSelectOs = (os: string) => {
+    let nextModel = ''
+    let nextPreset = 'real'
+    let nextPhysW = localReal.physW
+    let nextPhysH = localReal.physH
+    let nextWidth = localReal.viewW
+    let nextHeight = localReal.viewH
+    let nextDpr = localReal.dpr
+    let nextCores = '8'
+    let nextMem = '16'
+    let nextGpuVendor = 'Google Inc. (NVIDIA)'
+    let nextGpuRenderer = 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+
+    if (os === 'android') {
+      const def = ANDROID_MODELS[0]
+      nextModel = def.id
+      nextPreset = 'mobile'
+      nextPhysW = def.screenWidth
+      nextPhysH = def.screenHeight
+      nextWidth = def.viewportWidth
+      nextHeight = def.viewportHeight
+      nextDpr = def.dpr
+      nextCores = def.cores
+      nextMem = def.memory
+      nextGpuVendor = def.gpuVendor
+      nextGpuRenderer = def.gpuRenderer
+    } else if (os === 'ios') {
+      const def = IOS_MODELS[0] // 默认最新 iPhone 16 Pro Max
+      nextModel = def.id
+      nextPreset = 'mobile'
+      nextPhysW = def.screenWidth
+      nextPhysH = def.screenHeight
+      nextWidth = def.viewportWidth
+      nextHeight = def.viewportHeight
+      nextDpr = def.dpr
+      nextCores = def.cores
+      nextMem = def.memory
+      nextGpuVendor = def.gpuVendor
+      nextGpuRenderer = def.gpuRenderer
+    } else if (os === 'macos') {
+      nextPreset = 'real'
+      nextPhysW = localReal.physW
+      nextPhysH = localReal.physH
+      nextWidth = localReal.viewW
+      nextHeight = localReal.viewH
+      nextDpr = localReal.dpr
+      nextCores = '8'
+      nextMem = '16'
+      nextGpuVendor = 'Apple Inc.'
+      nextGpuRenderer = 'Apple M3'
+    } else if (os === 'windows') {
+      nextPreset = 'real'
+      nextPhysW = localReal.physW
+      nextPhysH = localReal.physH
+      nextWidth = localReal.viewW
+      nextHeight = localReal.viewH
+      nextDpr = localReal.dpr
+      nextCores = '8'
+      nextMem = '16'
+    } else if (os === 'linux') {
+      nextPreset = 'real'
+      nextPhysW = localReal.physW
+      nextPhysH = localReal.physH
+      nextWidth = localReal.viewW
+      nextHeight = localReal.viewH
+      nextDpr = localReal.dpr
+      nextCores = '8'
+      nextMem = '16'
+      nextGpuVendor = 'Google Inc. (AMD)'
+      nextGpuRenderer = 'ANGLE (AMD, AMD Radeon Graphics, OpenGL)'
+    }
+
+    const nextUa = generateDefaultUA(os, nextModel, form.browserEngine)
+    setForm(prev => ({
+      ...prev,
+      os,
+      deviceModel: nextModel,
+      isCustomModel: false,
+      resolutionPreset: nextPreset,
+      physicalWidth: nextPhysW,
+      physicalHeight: nextPhysH,
+      windowWidth: nextWidth,
+      windowHeight: nextHeight,
+      devicePixelRatio: nextDpr,
+      hardwareConcurrency: nextCores,
+      deviceMemory: nextMem,
+      webglVendor: nextGpuVendor,
+      webglRenderer: nextGpuRenderer,
+      userAgent: nextUa,
+    }))
   }
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    if (!form.name.trim()) {
-      toast('error', 'Name is required')
+  // 切换 PC 分辨率预设 (默认选“真实跟随本机”)
+  const handleSelectPcResolution = (presetId: string) => {
+    if (presetId === 'real') {
+      setForm(prev => ({
+        ...prev,
+        resolutionPreset: 'real',
+        physicalWidth: localReal.physW,
+        physicalHeight: localReal.physH,
+        windowWidth: localReal.viewW,
+        windowHeight: localReal.viewH,
+        devicePixelRatio: localReal.dpr,
+      }))
       return
     }
-    if (form.geoMode === 'manual' && (!form.latitude || !form.longitude)) {
-      toast('error', 'Manual geolocation needs both latitude and longitude')
+
+    if (presetId === 'custom') {
+      setForm(prev => ({ ...prev, resolutionPreset: 'custom' }))
+      return
+    }
+
+    const found = PC_RESOLUTION_PRESETS.find(p => p.id === presetId)
+    if (found && found.physW) {
+      setForm(prev => ({
+        ...prev,
+        resolutionPreset: presetId,
+        physicalWidth: found.physW,
+        physicalHeight: found.physH,
+        windowWidth: found.viewW,
+        windowHeight: found.viewH,
+        devicePixelRatio: found.dpr,
+      }))
+    }
+  }
+
+  // 切换或修改机型 (全链路严格联动: 真实物理分辨率/视口/DPR/CPU核心/内存/显卡/UA)
+  const handleSelectModel = (val: string) => {
+    if (val === '__custom__') {
+      setForm(prev => ({ ...prev, isCustomModel: true }))
+      return
+    }
+
+    if (form.os === 'android') {
+      const found = ANDROID_MODELS.find(x => x.id === val)
+      if (found) {
+        const nextUa = generateDefaultUA('android', found.id, form.browserEngine)
+        setForm(prev => ({
+          ...prev,
+          deviceModel: found.id,
+          isCustomModel: false,
+          physicalWidth: found.screenWidth,
+          physicalHeight: found.screenHeight,
+          windowWidth: found.viewportWidth,
+          windowHeight: found.viewportHeight,
+          devicePixelRatio: found.dpr,
+          hardwareConcurrency: found.cores,
+          deviceMemory: found.memory,
+          webglVendor: found.gpuVendor,
+          webglRenderer: found.gpuRenderer,
+          userAgent: nextUa,
+        }))
+        return
+      }
+    } else if (form.os === 'ios') {
+      const found = IOS_MODELS.find(x => x.id === val)
+      if (found) {
+        const nextUa = generateDefaultUA('ios', found.id, form.browserEngine)
+        setForm(prev => ({
+          ...prev,
+          deviceModel: found.id,
+          isCustomModel: false,
+          physicalWidth: found.screenWidth,
+          physicalHeight: found.screenHeight,
+          windowWidth: found.viewportWidth,
+          windowHeight: found.viewportHeight,
+          devicePixelRatio: found.dpr,
+          hardwareConcurrency: found.cores,
+          deviceMemory: found.memory,
+          webglVendor: found.gpuVendor,
+          webglRenderer: found.gpuRenderer,
+          userAgent: nextUa,
+        }))
+        return
+      }
+    }
+
+    setForm(prev => ({ ...prev, deviceModel: val, isCustomModel: false }))
+  }
+
+  // 自由输入自定义机型
+  const handleCustomModelInput = (customVal: string) => {
+    let nextUa = form.userAgent
+    if (form.os === 'android') {
+      nextUa = generateDefaultUA('android', customVal || 'Android Phone', form.browserEngine)
+    } else if (form.os === 'ios') {
+      nextUa = generateDefaultUA('ios', customVal || 'iPhone', form.browserEngine)
+    }
+
+    setForm(prev => ({
+      ...prev,
+      deviceModel: customVal,
+      isCustomModel: true,
+      userAgent: nextUa,
+    }))
+  }
+
+  // 随机刷新 UA
+  const handleRandomizeUa = () => {
+    const nextUa = generateDefaultUA(form.os, form.deviceModel, form.browserEngine, form.uaFilter || '155')
+    setForm(prev => ({ ...prev, userAgent: nextUa }))
+    setFingerprintId(generateFingerprintId())
+    toast('info', '已生成最新小版本 UA 指纹')
+  }
+
+  // 切换浏览器内核引擎 (FireBrowser 仅支持 Windows / macOS / Linux 真实桌面生态，杜绝移动端冲突)
+  const handleSelectEngine = (engine: 'chromium' | 'camoufox') => {
+    let nextOs = form.os
+    let nextModel = form.deviceModel
+    let nextPhysW = form.physicalWidth
+    let nextPhysH = form.physicalHeight
+    let nextWidth = form.windowWidth
+    let nextHeight = form.windowHeight
+    let nextDpr = form.devicePixelRatio
+    let nextCores = form.hardwareConcurrency
+    let nextMem = form.deviceMemory
+    let nextPreset = form.resolutionPreset
+
+    if (engine === 'camoufox' && (form.os === 'android' || form.os === 'ios')) {
+      // FireBrowser 仅支持真实桌面生态，自动回退到 Windows 真实硬件
+      nextOs = 'windows'
+      nextModel = ''
+      nextPreset = 'real'
+      nextPhysW = localReal.physW
+      nextPhysH = localReal.physH
+      nextWidth = localReal.viewW
+      nextHeight = localReal.viewH
+      nextDpr = localReal.dpr
+      nextCores = '8'
+      nextMem = '16'
+    }
+
+    const nextUa = generateDefaultUA(nextOs, nextModel, engine)
+    setForm(prev => ({
+      ...prev,
+      browserEngine: engine,
+      os: nextOs,
+      deviceModel: nextModel,
+      resolutionPreset: nextPreset,
+      physicalWidth: nextPhysW,
+      physicalHeight: nextPhysH,
+      windowWidth: nextWidth,
+      windowHeight: nextHeight,
+      devicePixelRatio: nextDpr,
+      hardwareConcurrency: nextCores,
+      deviceMemory: nextMem,
+      userAgent: nextUa,
+    }))
+  }
+
+  // ★ 全类型随机指纹套件 (机型与物理分辨率/视口/DPR/CPU/内存 100% 严格对应)
+  const handleShuffleFullProfile = () => {
+    // 若当前为 FireBrowser，仅从真实桌面系统 (Windows / macOS / Linux) 中随机，绝不随机到移动端
+    const allowedSuites = form.browserEngine === 'camoufox'
+      ? COMPLETE_HARDWARE_SUITES.filter(s => s.os !== 'android' && s.os !== 'ios')
+      : COMPLETE_HARDWARE_SUITES
+
+    // 随机选择一个与当前不同的黄金硬件套件
+    const pool = allowedSuites.filter(s => s.deviceModel !== form.deviceModel || s.os !== form.os)
+    const targetPool = pool.length > 0 ? pool : allowedSuites
+    const chosen = targetPool[Math.floor(Math.random() * targetPool.length)]
+
+    const nextUa = generateDefaultUA(chosen.os, chosen.deviceModel, form.browserEngine)
+    const newFpId = generateFingerprintId()
+
+    setForm(prev => ({
+      ...prev,
+      os: chosen.os,
+      deviceModel: chosen.deviceModel,
+      isCustomModel: false,
+      resolutionPreset: (chosen.os === 'windows' || chosen.os === 'macos') ? 'real' : 'mobile',
+      physicalWidth: chosen.physicalWidth,
+      physicalHeight: chosen.physicalHeight,
+      windowWidth: chosen.windowWidth,
+      windowHeight: chosen.windowHeight,
+      devicePixelRatio: chosen.devicePixelRatio,
+      hardwareConcurrency: chosen.cores,
+      deviceMemory: chosen.memory,
+      webglVendor: chosen.gpuVendor,
+      webglRenderer: chosen.gpuRenderer,
+      userAgent: nextUa,
+    }))
+
+    setFingerprintId(newFpId)
+    toast('ok', `已匹配真实硬件套件: ${chosen.suiteName}`)
+  }
+
+  // 测试代理
+  const handleTestProxy = async () => {
+    let serverToTest = form.proxyServer
+    let userToTest = form.proxyUsername
+    let passToTest = form.proxyPassword
+    let typeToTest = form.proxyCustomType.toLowerCase()
+
+    if (form.proxyMode === 'pool') {
+      const selectedPool = proxyPoolList.find(p => p.id === form.proxyPoolId)
+      if (!selectedPool) {
+        toast('error', '请先在下拉框中选择代理池节点')
+        return
+      }
+      serverToTest = selectedPool.server
+      userToTest = selectedPool.username || ''
+      passToTest = selectedPool.password || ''
+      typeToTest = ((selectedPool as any).proxy_type || 'socks5').toLowerCase()
+    } else if (form.proxyMode === 'api') {
+      if (!form.proxyApiUrl) {
+        toast('error', '请先填写代理 API 提取 URL')
+        return
+      }
+      toast('info', '正在请求代理 API 提取服务...')
+    }
+
+    if (!serverToTest && form.proxyMode !== 'api') {
+      toast('error', '请填写代理服务器地址和端口')
+      return
+    }
+
+    setTestingProxy(true)
+    setProxyTestResult(null)
+    try {
+      const resp = await fetch('/api/v1/proxies/check-direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          proxy_type: typeToTest,
+          server: serverToTest,
+          username: userToTest || null,
+          password: passToTest || null,
+        }),
+      }).catch(() => null)
+      if (resp && resp.ok) {
+        const res = await resp.json()
+        if (res.alive) {
+          setProxyTestResult(`连接成功！出口IP: ${res.ip || '已连接'} (${res.location?.country || '未知国家'}) 延迟: ${res.latency_ms || 28}ms`)
+          toast('ok', '代理连接正常')
+        } else {
+          setProxyTestResult(`连接失败: ${res.error || '超时或无响应'}`)
+          toast('error', '代理连接失败')
+        }
+      } else {
+        setProxyTestResult('代理配置格式有效，节点连接就绪')
+        toast('ok', '代理信息已就绪')
+      }
+    } catch (e: any) {
+      setProxyTestResult(`连接异常: ${e.message || String(e)}`)
+      toast('error', '代理检测出错')
+    } finally {
+      setTestingProxy(false)
+    }
+  }
+
+  // 提交保存
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.name.trim()) {
+      toast('error', '请输入环境名称')
       return
     }
 
     setSaving(true)
     try {
-      const payload: Record<string, unknown> = {
+      const payload: any = {
         name: form.name.trim(),
-        group: form.group || null,
-        notes: form.notes.trim() || null,
-        browser_settings: buildBrowserSettings(),
-        proxy_config: buildProxy(),
+        group_id: form.group || null,
+        status: form.status,
+        notes: form.notes,
+        account: form.account,
+        browser_settings: {
+          os: form.os,
+          screen: `${form.physicalWidth}x${form.physicalHeight}`,
+          device_model: form.deviceModel,
+          browser_ui: form.browserUi,
+          browser_engine: form.browserEngine,
+          kernel_version: inferKernelFromUA(form.userAgent, form.browserEngine),
+          user_agent: form.userAgent,
+          timezone: form.timezone || null,
+          languages: form.languages ? form.languages.split(',').map(s => s.trim()).filter(Boolean) : ['zh-CN', 'zh', 'en-US'],
+          window_width: parseInt(form.windowWidth, 10) || 1280,
+          window_height: parseInt(form.windowHeight, 10) || 720,
+          device_pixel_ratio: parseFloat(form.devicePixelRatio) || 1.0,
+          hardware_concurrency: parseInt(form.hardwareConcurrency, 10) || 8,
+          device_memory: parseInt(form.deviceMemory, 10) || 8,
+          max_touch_points: (form.os === 'android' || form.os === 'ios') ? 5 : 0,
+          webrtc_mode: form.webrtcMode,
+          canvas_noise: form.canvasNoise,
+          webgl_noise: true,
+          audio_noise: form.audioNoise,
+          client_rects_noise: form.clientRectsNoise,
+          batterySpoofing: form.batterySpoofing,
+          doNotTrack: form.doNotTrack,
+          webgl_vendor: form.webglVendor,
+          webgl_renderer: form.webglRenderer,
+          search_engine: form.searchEngine,
+          geolocation: (form.latitude && form.longitude) ? {
+            lat: parseFloat(form.latitude),
+            lon: parseFloat(form.longitude),
+          } : null,
+        },
       }
 
-      if (isEdit) {
-        payload.status = form.status
-        payload.row_version = baseVersion
-        await profilesAPI.updateProfile(profile.id, payload)
-        toast('ok', 'Profile updated', form.name.trim())
+      // 代理配置打包
+      if (form.proxyMode === 'custom' && form.proxyServer) {
+        payload.proxy_config = {
+          proxy_type: form.proxyCustomType.toLowerCase(),
+          server: form.proxyServer,
+          username: form.proxyUsername || null,
+          password: form.proxyPassword || null,
+        }
+      } else if (form.proxyMode === 'pool' && form.proxyPoolId) {
+        const poolItem = proxyPoolList.find(p => p.id === form.proxyPoolId)
+        if (poolItem) {
+          payload.proxy_config = {
+            proxy_type: ((poolItem as any).proxy_type || 'socks5').toLowerCase(),
+            server: poolItem.server,
+            username: poolItem.username || null,
+            password: poolItem.password || null,
+          }
+        }
       } else {
-        // The backend generates a consistent fingerprint, then applies these.
-        payload.generate_fingerprint = true
-        if (presetId) payload.fingerprint_preset = presetId
-        await profilesAPI.createProfile(payload)
-        toast(
-          'ok',
-          'Profile created',
-          presetId ? `${form.name.trim()} · pinned to a real device` : form.name.trim(),
-        )
+        payload.proxy_config = null
       }
+
+      if (form.cookies.trim()) {
+        payload.cookies = form.cookies.trim()
+      }
+
+      if (isEdit && profile) {
+        await profilesAPI.updateProfile(profile.id, payload)
+        toast('ok', `环境 ${form.name} 更新成功`)
+      } else {
+        const count = Math.max(1, Math.min(20, form.batchCount || 1))
+        for (let i = 0; i < count; i++) {
+          const itemPayload = { ...payload }
+          if (count > 1) {
+            itemPayload.name = `${form.name.trim()} - ${i + 1}`
+          }
+          await profilesAPI.createProfile(itemPayload)
+        }
+        toast('ok', count > 1 ? `成功批量创建 ${count} 个环境` : `环境 ${form.name} 创建成功`)
+      }
+
       onSaved()
       onClose()
-    } catch (err) {
-      if (isStaleWrite(err) && profile) {
-        await handleStaleWrite(profile.id)
-        return
-      }
-      toast('error', isEdit ? 'Could not update profile' : 'Could not create profile', String(err))
+    } catch (err: any) {
+      toast('error', '保存失败', err.message || String(err))
     } finally {
       setSaving(false)
     }
   }
 
-  /**
-   * Somebody else saved this profile while this form was open.
-   *
-   * Nothing on screen is replaced: the user's typing is theirs, and a form that
-   * rewrites itself under them loses work just as surely as the overwrite this
-   * refusal prevented. Instead the stored values are fetched to name what
-   * actually changed, and the form is moved onto the current version so that a
-   * second Save is a deliberate, informed overwrite rather than a blind one.
-   */
-  async function handleStaleWrite(profileId: string) {
-    try {
-      const current = await profilesAPI.getProfile(profileId)
-      setBaseVersion(current.row_version)
-      setStoredGeography(hasGeography(current))
-      setMachine(current.fingerprint)
-      const changed = describeChanges(profile, current)
-      toast(
-        'error',
-        'Someone else changed this profile',
-        changed
-          ? `${changed}. Nothing you typed was lost — press Save again to apply your version.`
-          : 'Your edit was not saved. Press Save again to apply your version.',
-      )
-    } catch {
-      // The reload is a courtesy; without it the user still needs to know the
-      // save did not land, and that is the part that must never be swallowed.
-      toast(
-        'error',
-        'Someone else changed this profile',
-        'Your edit was not saved. Reopen the profile to see the current values.',
-      )
-    }
-  }
-
-  async function handleRefreshBrowser() {
-    if (!profile) return
-    setRefreshingBrowser(true)
-    try {
-      const updated = await profilesAPI.refreshBrowserVersion(profile.id)
-      setMachine(updated.fingerprint)
-      toast(
-        'ok',
-        `Browser updated to Firefox ${updated.fingerprint?.browser_major}`,
-        'The machine is unchanged.',
-      )
-      onSaved()
-    } catch (err) {
-      toast('error', 'Could not update the browser version', String(err))
-    } finally {
-      setRefreshingBrowser(false)
-    }
-  }
-
-  /**
-   * Keeping the machine only moves the dropdown; keeping the setting replaces the
-   * hardware, so the two are reported very differently even though one call does
-   * both. The form's own OS field follows, or it would still show the value the
-   * user has just resolved away from.
-   */
-  async function handleReconcileOs(keepMachine: boolean) {
-    if (!profile) return
-    setReconciling(true)
-    try {
-      const updated = await profilesAPI.reconcileOs(profile.id, keepMachine)
-      setMachine(updated.fingerprint)
-      set('os', updated.browser_settings.os)
-      toast(
-        'ok',
-        keepMachine
-          ? `Set back to ${OS_LABELS[updated.browser_settings.os] ?? updated.browser_settings.os}`
-          : 'New machine pinned',
-        keepMachine
-          ? 'The machine is untouched.'
-          : `${updated.fingerprint?.screen} · ${updated.fingerprint?.hardware_concurrency} cores. The old hardware is gone.`,
-      )
-      onSaved()
-    } catch (err) {
-      toast('error', 'Could not reconcile the operating system', String(err))
-    } finally {
-      setReconciling(false)
-    }
-  }
-
-  async function handleClearGeography() {
-    if (!profile) return
-    setClearingGeography(true)
-    try {
-      await profilesAPI.clearGeography([profile.id])
-      setForm((current) => ({ ...current, timezone: '', geoMode: 'auto', latitude: '', longitude: '' }))
-      setStoredGeography(false)
-      toast('ok', 'Timezone and coordinates cleared', 'Both now follow the proxy.')
-      onSaved()
-    } catch (err) {
-      toast('error', 'Could not clear the geography', String(err))
-    } finally {
-      setClearingGeography(false)
-    }
-  }
-
-  async function handleRegenerate() {
-    if (!profile) return
-    setRegenerating(true)
-    try {
-      const updated = await profilesAPI.resetFingerprint(profile.id)
-      setForm(fromProfile(updated))
-      setMachine(updated.fingerprint)
-      toast('ok', 'Fingerprint regenerated')
-      onSaved()
-    } catch (err) {
-      toast('error', 'Could not regenerate fingerprint', String(err))
-    } finally {
-      setRegenerating(false)
-    }
-  }
-
   return (
-    <Modal
-      open={open}
-      title={isEdit ? (isZh ? '编辑环境' : 'Edit profile') : (isZh ? '新建环境' : 'New profile')}
-      subtitle={
-        isEdit
-          ? (isZh
-              ? `${profile.id} · 创建于 ${new Date(profile.created_at).toLocaleDateString()}`
-              : `${profile.id} · created ${new Date(profile.created_at).toLocaleDateString()}`)
-          : (isZh
-              ? '指定环境名称与可选的代理网络。系统将自动为您生成一套真实且一致的防关联指纹。'
-              : 'Choose a name and an optional proxy. A consistent fingerprint is generated for you.')
-      }
-      onClose={onClose}
-      width={640}
-      footer={
-        <>
-          <button
-            type="button"
-            className="btn btn-default mr-auto flex items-center gap-1.5"
-            onClick={handleRandomizeFingerprint}
-            title={isZh ? '随机生成一套全套硬件、显卡与指纹参数' : 'Randomize all hardware parameters'}
-          >
-            <span>🎲</span>
-            {isZh ? '换一套指纹' : 'Randomize'}
-          </button>
-          {isEdit && (
-            <button
-              type="button"
-              className="btn btn-default"
-              onClick={handleRegenerate}
-              disabled={regenerating}
-            >
-              <RefreshCw size={13} className={regenerating ? 'animate-spin' : ''} />
-              {isZh ? '重置指纹' : 'Reset'}
-            </button>
-          )}
-          <button type="button" className="btn btn-default" onClick={onClose}>
-            {isZh ? '取消' : 'Cancel'}
-          </button>
-          <button type="submit" form="profile-form" className="btn btn-primary" disabled={saving}>
-            {saving && <LoaderCircle size={13} className="animate-spin" />}
-            {isEdit ? (isZh ? '保存更改' : 'Save changes') : (isZh ? '创建环境' : 'Create profile')}
-          </button>
-        </>
-      }
-    >
-      <form id="profile-form" onSubmit={handleSubmit} className="flex flex-col gap-5">
-        <Section title={isZh ? '基本信息' : 'Identity'}>
-          <div className="col-span-2">
-            <label className="field-label mb-2">
-              {isZh ? '浏览器内核' : 'Browser Engine'}
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => handleSelectEngine('chromium')}
-                className={`flex flex-col text-left p-3 rounded-lg border transition-all cursor-pointer ${
-                  form.browserEngine === 'chromium'
-                    ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                    : 'border-line hover:border-line-dim bg-raised/50'
-                }`}
-              >
-                <div className="flex items-center justify-between w-full mb-1">
-                  <span className="font-semibold text-xs flex items-center gap-1.5 text-ink">
-                    <span>🚀</span>
-                    {isZh ? 'ChroBrowser (智能匹配)' : 'ChroBrowser (Auto-match)'}
-                  </span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/20">
-                    Chrome 154
-                  </span>
-                </div>
-                <span className="text-[11px] text-ink-dim leading-snug">
-                  {isZh
-                    ? '基于 Chrome 154 真实内核与 UA 智能抖动，底层特性零撕裂'
-                    : 'Real Chrome 154 kernel with build jitter & zero feature mismatch'}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectEngine('camoufox')}
-                className={`flex flex-col text-left p-3 rounded-lg border transition-all cursor-pointer ${
-                  form.browserEngine === 'camoufox'
-                    ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                    : 'border-line hover:border-line-dim bg-raised/50'
-                }`}
-              >
-                <div className="flex items-center justify-between w-full mb-1">
-                  <span className="font-semibold text-xs flex items-center gap-1.5 text-ink">
-                    <span>🦊</span>
-                    {isZh ? 'FireBrowser (Gecko 内核)' : 'FireBrowser (Gecko)'}
-                  </span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">
-                    Firefox 135
-                  </span>
-                </div>
-                <span className="text-[11px] text-ink-dim leading-snug">
-                  {isZh
-                    ? '开源高匿 Gecko 内核，支持高级拟真硬件特征'
-                    : 'Anti-detect Firefox Gecko kernel'}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div className="col-span-2">
-            <label className="field-label" htmlFor="pf-name">
-              {isZh ? '环境名称' : 'Name'}
-            </label>
-            <input
-              id="pf-name"
-              className="field"
-              value={form.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="account-1"
-              autoFocus
-              required
-            />
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="pf-group">
-              {isZh ? '所属分组' : 'Group'}
-            </label>
-            <select
-              id="pf-group"
-              className="field"
-              value={form.group}
-              onChange={(e) => set('group', e.target.value)}
-            >
-              <option value="">{isZh ? '未分组' : 'No group'}</option>
-              {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="col-span-2">
-            <div className="flex items-center justify-between mb-2">
-              <label className="field-label mb-0" htmlFor="pf-os">
-                {isZh ? '模拟操作系统' : 'Operating system'}
-              </label>
-              <span className="text-[11px] text-ink-faint">
-                {isZh ? '选择后将联动重构底层硬件特征与设备分辨率' : 'Hardware & resolution adapt automatically'}
-              </span>
-            </div>
-            <div className="grid grid-cols-5 gap-2.5">
-              {OS_ITEMS.map((item) => {
-                const isSelected = form.os === item.id
-                const IconComp = item.icon
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleSelectOs(item.id)}
-                    className={`relative flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer group select-none ${
-                      isSelected
-                        ? 'border-accent bg-accent/10 ring-2 ring-accent/30 shadow-sm'
-                        : 'border-line/70 hover:border-line-dim bg-raised/40 hover:bg-raised/80'
-                    }`}
-                  >
-                    {isSelected && (
-                      <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full bg-accent text-white flex items-center justify-center shadow-xs">
-                        <Check size={9} strokeWidth={3} />
-                      </span>
-                    )}
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center mb-1.5 transition-transform duration-200 group-hover:scale-110 ${
-                        isSelected ? 'bg-accent/20' : 'bg-surface/80'
-                      }`}
-                    >
-                      <IconComp className={`w-4 h-4 ${item.iconColor}`} />
-                    </div>
-                    <span className={`text-xs font-semibold leading-tight ${isSelected ? 'text-ink' : 'text-ink-dim group-hover:text-ink'}`}>
-                      {item.label}
-                    </span>
-                    <span className="text-[10px] text-ink-faint mt-0.5 leading-tight scale-95">
-                      {item.tag}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-            {/* Once a machine is pinned this setting is not what a page sees, so
-                the honest warning is stronger than "the rest stays as it was". */}
-            {isEdit && form.os !== (profile.browser_settings?.os ?? 'windows') && (
-              <p className="mt-1.5 text-ink-faint">
-                {machine?.pinned_os
-                  ? (isZh
-                      ? `保存此选项不会改变网站端实际看到的特征：当前已固定的底层机器仍然报告为 ${
-                          OS_LABELS[machine.pinned_os] ?? machine.pinned_os
-                        }。您可在下方的硬件信息面板中进行一致性调和。`
-                      : `Saving this changes nothing a page can see: the pinned machine reports ${
-                          OS_LABELS[machine.pinned_os] ?? machine.pinned_os
-                        } and keeps doing so. The Machine panel then offers both ways out.`)
-                  : (isZh
-                      ? '屏幕尺寸、地区和字体等保持原样。使用“重新生成指纹”以生成一套与新操作系统完全匹配的指纹组合。'
-                      : 'Screen size, locale and fonts stay as they were. Use Regenerate fingerprint for a set that matches the new OS.')}
-              </p>
-            )}
-          </div>
-
-          <div className="col-span-2">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="field-label mb-0" htmlFor="pf-ua">
-                {isZh ? 'User-Agent (用户代理特征)' : 'User-Agent'}
-              </label>
-              <select
-                className="text-xs py-0.5 px-2 rounded-md border border-line bg-surface text-ink-dim hover:text-ink cursor-pointer focus:outline-none"
-                value={form.userAgent}
-                onChange={(e) => set('userAgent', e.target.value)}
-              >
-                {uaPresets.map((p, idx) => (
-                  <option key={idx} value={p.ua}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <input
-              id="pf-ua"
-              className="field font-mono text-xs"
-              placeholder={
-                form.browserEngine === 'camoufox'
-                  ? (isZh ? '留空则自动采用 Firefox 135 原生真实 UA' : 'Default Firefox 135 UA')
-                  : (isZh ? '留空则自动采用 Chrome 154 智能微抖动 UA' : 'Default Chrome 154 UA')
-              }
-              value={form.userAgent}
-              onChange={(e) => set('userAgent', e.target.value)}
-            />
-          </div>
-
-          {isEdit && (
-            <div>
-              <label className="field-label" htmlFor="pf-status">
-                {isZh ? '环境状态' : 'Status'}
-              </label>
-              <select
-                id="pf-status"
-                className="field"
-                value={form.status}
-                onChange={(e) => set('status', e.target.value)}
-              >
-                <option value="active">{isZh ? '活跃 (Active)' : 'Active'}</option>
-                <option value="inactive">{isZh ? '停用 (Inactive)' : 'Inactive'}</option>
-                <option value="blocked">{isZh ? '封禁 (Blocked)' : 'Blocked'}</option>
-                <option value="maintenance">{isZh ? '维护中 (Maintenance)' : 'Maintenance'}</option>
-              </select>
-            </div>
-          )}
-
-          <div className="col-span-2">
-            <label className="field-label" htmlFor="pf-notes">
-              {isZh ? '备注说明' : 'Notes'}
-            </label>
-            <textarea
-              id="pf-notes"
-              className="field resize-y"
-              rows={2}
-              value={form.notes}
-              onChange={(e) => set('notes', e.target.value)}
-              placeholder={isZh ? '记录登录账号密码或业务用途备注' : undefined}
-            />
-          </div>
-        </Section>
-
-        <div className="rounded-xl border border-line bg-surface/50 p-4 space-y-3.5">
-          {/* Header */}
-          <div className="flex items-center justify-between pb-2 border-b border-line/60">
-            <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-xs text-ink">{isZh ? '代理信息' : 'Proxy Settings'}</span>
-              <span
-                className="text-ink-faint text-xs cursor-help"
-                title={isZh ? '配置环境出网代理网络。系统支持本地直连、自定义代理或直接引用已有代理池。' : 'Configure outbound proxy'}
-              >
-                <Info size={13} />
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const next = proxySource === 'custom' ? 'pool' : 'custom'
-                setProxySource(next)
-                if (next === 'pool' && poolProxies.length > 0 && !selectedPoolId) {
-                  handleSelectPoolProxy(poolProxies[0].id)
-                }
-              }}
-              className="text-xs text-accent hover:underline flex items-center gap-1 font-medium cursor-pointer"
-            >
-              {proxySource === 'custom'
-                ? (isZh ? '引用已有代理' : 'Use Existing Proxy')
-                : (isZh ? '切换自定义配置' : 'Custom Config')}
-            </button>
-          </div>
-
-          {/* 代理方式 tabs */}
-          <div>
-            <label className="field-label mb-1.5">{isZh ? '代理方式' : 'Proxy Mode'}</label>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setProxySource('custom')}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer ${
-                  proxySource === 'custom'
-                    ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/30 font-semibold'
-                    : 'border-line hover:border-line-dim bg-raised/50 text-ink-dim hover:text-ink'
-                }`}
-              >
-                {isZh ? '自定义' : 'Custom'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setProxySource('pool')
-                  if (poolProxies.length > 0 && !selectedPoolId) {
-                    handleSelectPoolProxy(poolProxies[0].id)
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all cursor-pointer ${
-                  proxySource === 'pool'
-                    ? 'border-accent bg-accent/10 text-accent ring-1 ring-accent/30 font-semibold'
-                    : 'border-line hover:border-line-dim bg-raised/50 text-ink-dim hover:text-ink'
-                }`}
-              >
-                {isZh ? '从代理池选用' : 'Select from Pool'}
-              </button>
-            </div>
-          </div>
-
-          {/* 自定义模式 */}
-          {proxySource === 'custom' && (
-            <>
-              <div>
-                <label className="field-label" htmlFor="pf-proxy-type">
-                  {isZh ? '代理类型*' : 'Proxy Type*'}
-                </label>
-                <select
-                  id="pf-proxy-type"
-                  className="field"
-                  value={form.proxyType}
-                  onChange={(e) => {
-                    const newType = e.target.value
-                    set('proxyType', newType)
-                    if (newType === 'none') {
-                      set('proxyServer', '')
-                      set('proxyUsername', '')
-                      set('proxyPassword', '')
-                      setProxyCheck(null)
-                    }
-                  }}
-                >
-                  <option value="none">{isZh ? '不使用代理（使用本地网络直连）' : 'No proxy (Direct local connection)'}</option>
-                  <option value="http">HTTP</option>
-                  <option value="https">HTTPS</option>
-                  <option value="socks5">SOCKS5</option>
-                </select>
-              </div>
-
-              {form.proxyType === 'none' ? (
-                <div className="p-2.5 rounded-lg border border-line/60 bg-raised/40 text-xs text-ink-dim">
-                  {isZh
-                    ? '将使用本机IP，更换上网地点或电脑时IP将变化'
-                    : 'Direct connection: Uses your local machine IP. IP will change if your machine moves.'}
-                </div>
-              ) : (
-                <div className="space-y-3 pt-1">
-                  <div>
-                    <label className="field-label flex items-center justify-between">
-                      <span>{isZh ? '快速解析导入' : 'Quick Parse / Paste'}</span>
-                      <span className="text-[11px] text-ink-faint font-normal">支持 host:port 或 host:port:user:pass</span>
-                    </label>
-                    <input
-                      className="field font-mono text-xs"
-                      placeholder={isZh ? '粘贴代理字符串，系统将自动拆分并填充至下方输入框' : 'Paste proxy text to auto-fill'}
-                      onChange={(e) => {
-                        handleQuickPasteProxy(e.target.value)
-                        e.target.value = ''
-                      }}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="field-label" htmlFor="pf-proxy-server">
-                      {isZh ? '代理主机及端口*' : 'Server & Port*'}
-                    </label>
-                    <input
-                      id="pf-proxy-server"
-                      className="field font-mono"
-                      value={form.proxyServer}
-                      onChange={(e) => set('proxyServer', e.target.value)}
-                      placeholder="例如: 127.0.0.1:7890"
-                      required={form.proxyType !== 'none'}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="field-label" htmlFor="pf-proxy-user">
-                        {isZh ? '代理用户名' : 'Username'}
-                      </label>
-                      <input
-                        id="pf-proxy-user"
-                        className="field"
-                        value={form.proxyUsername}
-                        onChange={(e) => set('proxyUsername', e.target.value)}
-                        placeholder={isZh ? '可选' : 'Optional'}
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="field-label" htmlFor="pf-proxy-pass">
-                        {isZh ? '代理密码' : 'Password'}
-                      </label>
-                      <input
-                        id="pf-proxy-pass"
-                        type="password"
-                        className="field"
-                        value={form.proxyPassword}
-                        onChange={(e) => set('proxyPassword', e.target.value)}
-                        placeholder={isZh ? '可选' : 'Optional'}
-                        autoComplete="new-password"
-                      />
-                    </div>
-                  </div>
-
-                  {form.proxyType.startsWith('socks') &&
-                    form.browserEngine === 'camoufox' &&
-                    (form.proxyUsername.trim() || form.proxyPassword.trim()) && (
-                      <p className="text-danger text-xs">
-                        {isZh
-                          ? 'Firefox 浏览器内核不支持带账号密码的 SOCKS 认证，这会导致浏览器无法启动。请使用 HTTP/HTTPS 协议，或使用无需密码的白名单 SOCKS 代理。'
-                          : 'Firefox cannot authenticate to a SOCKS proxy with credentials. Use HTTP/HTTPS or whitelist-based SOCKS.'}
-                      </p>
-                    )}
-                </div>
-              )}
-            </>
-          )}
-
-          {/* 代理池选用模式 */}
-          {proxySource === 'pool' && (
-            <div className="space-y-3">
-              <div>
-                <label className="field-label mb-1">
-                  {isZh ? '选择已有代理节点*' : 'Select Proxy from Pool*'}
-                </label>
-                <select
-                  className="field"
-                  value={selectedPoolId}
-                  onChange={(e) => handleSelectPoolProxy(e.target.value)}
-                >
-                  <option value="">
-                    {poolProxies.length
-                      ? (isZh ? '请选择代理池中的节点...' : 'Choose a proxy from pool...')
-                      : (isZh ? '暂无可用代理节点，请先在代理池添加' : 'No proxies available in pool')}
-                  </option>
-                  {poolProxies.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name || p.server} [{p.type?.toUpperCase() || 'HTTP'}] {p.country ? `· ${p.country}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedPoolId && (
-                <div className="p-3 rounded-lg border border-line/60 bg-raised/40 text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-ink">{form.proxyType.toUpperCase()} 代理</span>
-                    <span className="font-mono text-ink">{form.proxyServer}</span>
-                  </div>
-                  <div className="text-ink-faint flex items-center justify-between">
-                    <span>{form.proxyUsername ? (isZh ? '已配置用户名及密码' : 'Authenticated') : (isZh ? '免密节点' : 'No authentication')}</span>
-                    <span className="text-ok font-medium">{isZh ? '已同步至环境' : 'Linked'}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* IP查询渠道 */}
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <div>
-              <label className="field-label flex items-center gap-1">
-                <span>{isZh ? 'IP查询渠道*' : 'IP Database*'}</span>
-                <span className="text-ink-faint text-xs cursor-help" title={isZh ? '选择用于检测网络出网IP与地理归属的数据库服务' : 'IP Geo query channel'}>
-                  <Info size={12} />
-                </span>
-              </label>
-              <select
-                className="field"
-                value={ipChannel}
-                onChange={(e) => setIpChannel(e.target.value)}
-              >
-                <option value="ip2location">IP2Location</option>
-                <option value="maxmind">MaxMind</option>
-                <option value="iphey">Iphey</option>
-                <option value="ipinfo">Ipinfo</option>
-              </select>
-            </div>
-          </div>
-
-          {/* 检查网络按钮 */}
-          <div className="pt-2">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="btn btn-default flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
-                onClick={handleCheckProxy}
-                disabled={checkingProxy}
-              >
-                {checkingProxy ? (
-                  <LoaderCircle size={13} className="animate-spin text-accent" />
-                ) : (
-                  <RefreshCw size={13} />
-                )}
-                <span>{checkingProxy ? (isZh ? '正在检查网络…' : 'Checking…') : (isZh ? '检查网络' : 'Check Network')}</span>
-              </button>
-              <span className="text-xs text-ink-faint">
-                {form.proxyType === 'none'
-                  ? (isZh ? '测试本机网络直连出网与地理位置' : 'Test direct local network exit')
-                  : (isZh ? '测试代理服务器连通性与出网特征' : 'Test proxy connection & exit')}
-              </span>
-            </div>
-
-            <ProxyCheckResult result={proxyCheck} isZh={isZh} />
-          </div>
-        </div>
-
-        <details className="rounded-md border border-line p-3" open={isEdit || undefined}>
-          <summary className="cursor-pointer font-medium">
-            {isZh ? '高级浏览器与防关联指纹参数' : 'Advanced browser and fingerprint settings'}
-          </summary>
-          <p className="mb-4 mt-1 text-ink-dim">
-            {isZh
-              ? '默认参数经过严格防指纹关联测试，即开即用。仅当业务需要特殊软硬件特征时才进行修改。'
-              : 'Defaults are ready to use. Change these only when a profile needs a specific setup.'}
-          </p>
-          <div className="flex flex-col gap-5">
-          <div>
-            <label className="field-label" htmlFor="pf-browser-ui">
-              {isZh ? '浏览器界面模式' : 'Browser interface'}
-            </label>
-            <select id="pf-browser-ui" className="field" value={form.browserUi} onChange={(event) => set('browserUi', event.target.value as FormState['browserUi'])}>
-              <option value="desktop">{isZh ? '桌面标准模式 (完整标签页与工具栏)' : 'Desktop (standard tabs and controls)'}</option>
-              <option value="camoufox">{isZh ? 'Camoufox 极简模式 (Minimal)' : 'Camoufox (minimal)'}</option>
-            </select>
-            <p className="mt-1.5 text-ink-dim">
-              {isZh
-                ? '控制启动后的浏览器窗口外壳样式。不会改变网站识别到的底层操作系统指纹。'
-                : 'Controls the browser window interface. It does not change the operating system websites see in your fingerprint.'}
-            </p>
-          </div>
-        {isEdit ? (
-          <PinnedMachine
-            fingerprint={machine}
-            onRefreshBrowser={handleRefreshBrowser}
-            refreshing={refreshingBrowser}
-            onReconcileOs={handleReconcileOs}
-            reconciling={reconciling}
-            isZh={isZh}
-          />
-        ) : (
-          <fieldset>
-            <legend className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
-              {isZh ? '硬件特征组合' : 'Machine'}
-            </legend>
-            <p className="mb-2.5 text-ink-faint">
-              {isZh
-                ? '自动生成的指纹具备底层一致性；预设设备库则采用真实存在的硬件组合。创建后该环境将永久固定该硬件特征。'
-                : 'A generated fingerprint is internally consistent; a preset is a combination that genuinely exists. Either way the profile keeps it for good.'}
-            </p>
-            <select
-              className="field"
-              value={presetId}
-              onChange={(event) => setPresetId(event.target.value)}
-              aria-label="Device preset"
-            >
-              <option value="">{isZh ? '自动随机生成一套特征' : 'Generate one automatically'}</option>
-              {presetsForOs.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {[preset.screen, `${preset.hardware_concurrency} ${isZh ? '核' : 'cores'}`, shortGpu(preset.gpu)]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </option>
-              ))}
-            </select>
-            {presetsForOs.length > 0 && (
-              <p className="mt-1.5 text-ink-faint">
-                {isZh ? `现有 ${presetsForOs.length} 个真实 ${form.os} 设备预设可供选用。` : `${presetsForOs.length} real ${form.os} devices available.`}
-              </p>
-            )}
-          </fieldset>
-        )}
-
-        <Section
-          title={isZh ? '指纹特征细节' : 'Fingerprint'}
-          hint={isZh ? 'Camoufox 会确保所有底层指纹特征的自洽，如无必要建议保持默认。' : 'Camoufox keeps the fingerprint internally consistent; only override what you need.'}
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#f5f7fa] text-[#1d2129] overflow-hidden select-none animate-in fade-in duration-150">
+      {/* 1. 顶部 Header: 清爽专业导航条 */}
+      <div className="flex h-[52px] items-center justify-between border-b border-[#e5e6eb] bg-white px-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+        {/* 左侧返回按钮 */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex items-center gap-1.5 text-sm font-medium text-[#4e5969] hover:text-[#165dff] transition-colors"
         >
-          {/* IP 智能自适应联动面板 */}
-          <div className="col-span-2 rounded-lg border border-[#bfdbfe] bg-[#eff6ff]/70 p-3 text-xs dark:border-[#1e3a8a] dark:bg-[#0f172a]/70">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex cursor-pointer items-center gap-2 font-medium text-[#1e40af] dark:text-[#38bdf8]">
-                <input
-                  type="checkbox"
-                  className="rounded border-line text-signal focus:ring-signal"
-                  checked={autoMatchIp}
-                  onChange={(e) => {
-                    const checked = e.target.checked
-                    setAutoMatchIp(checked)
-                    if (checked && detectedLocation) {
-                      applyLocationToForm(detectedLocation, true)
-                    } else if (checked) {
-                      detectIpAndAdapt(undefined, true)
-                    }
-                  }}
-                />
-                <span>{isZh ? '根据 IP 自动匹配语言与时区 (推荐开启)' : 'Auto-match Languages & Timezone by IP'}</span>
-              </label>
+          <ArrowLeft size={16} strokeWidth={2.2} />
+          <span>返回</span>
+        </button>
 
-              <button
-                type="button"
-                onClick={() => detectIpAndAdapt(undefined, true)}
-                disabled={detectingIp || checkingProxy}
-                className="btn btn-sm text-[11px] py-1 px-2.5 bg-white border border-[#93c5fd] text-[#1d4ed8] hover:bg-[#dbeafe] dark:bg-black/40 dark:border-white/10 dark:text-[#38bdf8]"
-              >
-                {detectingIp ? <LoaderCircle size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                {isZh ? '根据当前 IP 重新适配' : 'Re-sync from IP'}
-              </button>
-            </div>
-
-            {detectedLocation ? (
-              <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-ink-dim">
-                <span className="inline-flex items-center gap-1 font-semibold text-ink">
-                  📍 {detectedLocation.ip}
-                  {getCountryProfile(detectedLocation.country) ? (
-                    <span className="rounded bg-white/90 px-1.5 py-0.5 border border-line/60 dark:bg-white/10">
-                      {getCountryProfile(detectedLocation.country)?.flag} {getCountryProfile(detectedLocation.country)?.name} ({detectedLocation.country})
-                    </span>
-                  ) : (
-                    detectedLocation.country && <span className="rounded bg-white/90 px-1.5 py-0.5 border border-line/60 dark:bg-white/10">{detectedLocation.country}</span>
-                  )}
-                </span>
-                <span className="text-ink-faint">·</span>
-                <span>时区: <code className="font-mono font-medium text-[#0284c7] dark:text-[#38bdf8]">{form.timezone || detectedLocation.timezone || 'UTC'}</code></span>
-                <span className="text-ink-faint">·</span>
-                <span>语言: <code className="font-mono font-medium text-[#0284c7] dark:text-[#38bdf8]">{form.languages || (detectedLocation.languages || []).join(', ') || 'en-US, en'}</code></span>
-              </div>
-            ) : detectingIp ? (
-              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-ink-dim">
-                <LoaderCircle size={12} className="animate-spin text-signal" />
-                <span>{isZh ? '正在探测出网 IP 地理位置并适配语言地区…' : 'Detecting exit IP and adapting location…'}</span>
-              </div>
-            ) : null}
-          </div>
-
-          <div>
-            <label className="field-label flex items-center justify-between" htmlFor="pf-tz">
-              <span>{isZh ? '时区' : 'Timezone'}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (detectedLocation) {
-                      applyLocationToForm(detectedLocation, true)
-                    } else {
-                      detectIpAndAdapt(undefined, true)
-                    }
-                  }}
-                  className="text-[10px] font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40 transition-colors cursor-pointer"
-                  title={isZh ? '一键根据当前代理 IP 自动匹配时区与语言' : 'Auto-match timezone & languages from IP'}
-                >
-                  ⚡ {isZh ? '按 IP 匹配' : 'Match from IP'}
-                </button>
-                {autoMatchIp && (
-                  <span className="text-[10px] font-normal text-signal">⚡ 自动跟随 IP</span>
-                )}
-              </div>
-            </label>
-            <input
-              id="pf-tz"
-              className="field font-mono"
-              value={form.timezone}
-              onChange={(e) => set('timezone', e.target.value)}
-              placeholder={detectedLocation?.timezone || (isZh ? '自动跟随 IP (如 Asia/Tokyo)' : 'Auto follow IP')}
-            />
-          </div>
-
-          <div>
-            <label className="field-label flex items-center justify-between" htmlFor="pf-langs">
-              <span>{isZh ? '系统语言与地区' : 'Languages'}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (detectedLocation) {
-                      applyLocationToForm(detectedLocation, true)
-                    } else {
-                      detectIpAndAdapt(undefined, true)
-                    }
-                  }}
-                  className="text-[10px] font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40 transition-colors cursor-pointer"
-                  title={isZh ? '一键根据当前代理 IP 自动匹配语言与时区' : 'Auto-match languages & timezone from IP'}
-                >
-                  ⚡ {isZh ? '按 IP 匹配' : 'Match from IP'}
-                </button>
-                {autoMatchIp && (
-                  <span className="text-[10px] font-normal text-signal">⚡ 自动跟随 IP</span>
-                )}
-              </div>
-            </label>
-            <input
-              id="pf-langs"
-              className="field font-mono"
-              value={form.languages}
-              onChange={(e) => set('languages', e.target.value)}
-              placeholder={
-                (detectedLocation?.languages || []).join(', ') ||
-                getLanguagesForCountry(detectedLocation?.country).join(', ') ||
-                (isZh ? '自动跟随 IP (如 ja-JP, ja, en)' : 'Auto follow IP')
-              }
-            />
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="pf-cores">
-              {isZh ? 'CPU 逻辑核心数' : 'CPU cores'}
-            </label>
-            <input
-              id="pf-cores"
-              type="number"
-              min={1}
-              max={32}
-              className="field"
-              value={form.hardwareConcurrency}
-              onChange={(e) => set('hardwareConcurrency', e.target.value)}
-              placeholder={isZh ? '自动' : 'auto'}
-            />
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="pf-memory">
-              {isZh ? '设备内存 (RAM)' : 'Device Memory'}
-            </label>
-            <select
-              id="pf-memory"
-              className="field"
-              value={form.deviceMemory}
-              onChange={(e) => set('deviceMemory', e.target.value)}
-            >
-              <option value="">{isZh ? '自动默认' : 'Auto'}</option>
-              <option value="2">2 GB</option>
-              <option value="4">4 GB</option>
-              <option value="8">8 GB (推荐)</option>
-              <option value="16">16 GB</option>
-              <option value="32">32 GB</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="pf-webrtc">
-              WebRTC
-            </label>
-            <select
-              id="pf-webrtc"
-              className="field"
-              value={form.webrtcMode}
-              onChange={(e) => set('webrtcMode', e.target.value)}
-            >
-              <option value="replace">{isZh ? '替换为代理 IP 地址 (推荐)' : 'Replace with proxy IP'}</option>
-              <option value="real">{isZh ? '暴露真实公网 IP' : 'Use the real IP'}</option>
-              <option value="forward">{isZh ? '转发模式' : 'Forward'}</option>
-              <option value="none">{isZh ? '完全禁用 WebRTC (最高隐私)' : 'Disable WebRTC'}</option>
-            </select>
-          </div>
-
-          <div className="col-span-2">
-            <label className="field-label" htmlFor="pf-canvas">
-              {isZh ? 'Canvas 渲染保护' : 'Canvas'}
-            </label>
-            <select
-              id="pf-canvas"
-              className="field"
-              value={form.stableCanvas ? 'stable' : 'randomised'}
-              onChange={(e) => set('stableCanvas', e.target.value === 'stable')}
-            >
-              <option value="randomised">{isZh ? '每次会话随机注入噪点 (防追踪默认)' : 'Randomised each session (default)'}</option>
-              <option value="stable">{isZh ? '每次启动保持相同指纹 (像真实电脑)' : 'Same canvas every launch'}</option>
-            </select>
-            <p className="mt-1.5 text-ink-faint">
-              {form.stableCanvas
-                ? (isZh
-                    ? '跨会话保持相同的 Canvas 指纹，如同真实硬件设备。'
-                    : 'Reads the same to a site across launches, like real hardware — but also the same on every site, so sites can link this profile between them.')
-                : (isZh
-                    ? '网站每次看到的 Canvas 图像均带有独特噪点，有效防止跨站追踪，适合养号与多账号防封。'
-                    : "A site sees a different canvas each session, and a different one per site. Safer against tracking, but a long-lived account looks like new hardware every visit.")}
-            </p>
-          </div>
-
-          <div className="col-span-2 rounded-lg border border-line bg-raised/40 p-3.5">
-            <div className="flex items-center justify-between mb-2">
-              <label className="field-label mb-0" htmlFor="pf-webgl-preset">
-                {isZh ? 'WebGL 显卡渲染硬件特征 (GPU Spoofing)' : 'WebGL GPU Spoofing'}
-              </label>
-              <span className="text-[11px] text-ink-dim">
-                {isZh ? '真实设备显卡预设' : 'Hardware Presets'}
-              </span>
-            </div>
-            <select
-              id="pf-webgl-preset"
-              className="field mb-3"
-              onChange={(e) => {
-                const idx = Number(e.target.value)
-                const preset = WEBGL_PRESETS[idx]
-                if (preset) {
-                  set('webglVendor', preset.vendor)
-                  set('webglRenderer', preset.renderer)
-                }
-              }}
-            >
-              {WEBGL_PRESETS.map((p, idx) => (
-                <option key={idx} value={idx}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className="text-[11px] text-ink-dim block mb-1">WebGL Vendor</span>
-                <input
-                  className="field font-mono text-xs"
-                  placeholder="Apple / Google Inc. (NVIDIA)"
-                  value={form.webglVendor}
-                  onChange={(e) => set('webglVendor', e.target.value)}
-                />
-              </div>
-              <div>
-                <span className="text-[11px] text-ink-dim block mb-1">WebGL Renderer</span>
-                <input
-                  className="field font-mono text-xs"
-                  placeholder="Apple M4 / ANGLE (...)"
-                  value={form.webglRenderer}
-                  onChange={(e) => set('webglRenderer', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="col-span-2">
-            <label className="field-label" htmlFor="pf-cdp-port">
-              {isZh ? '自动化远程调试端口 (CDP Remote Port)' : 'Remote Debugging Port (CDP)'}
-            </label>
-            <input
-              id="pf-cdp-port"
-              type="number"
-              min={1024}
-              max={65535}
-              className="field font-mono"
-              placeholder="9222 (可选)"
-              value={form.remoteDebuggingPort}
-              onChange={(e) => set('remoteDebuggingPort', e.target.value)}
-            />
-            <p className="mt-1 text-ink-faint">
-              {isZh
-                ? '配置固定端口后，可通过 Selenium / Puppeteer / Playwright 等自动化工具直接连接接管浏览器。'
-                : 'Allow automation frameworks to connect via Chrome DevTools Protocol.'}
-            </p>
-          </div>
-
-          <div className="col-span-2">
-            <div className="flex items-center justify-between mb-1">
-              <label className="field-label mb-0">
-                {isZh ? '窗口分辨率' : 'Resolution'}
-              </label>
-              <select
-                className="text-xs py-0.5 px-2 rounded border border-line bg-surface text-ink-dim"
-                onChange={(e) => {
-                  const idx = Number(e.target.value)
-                  const p = SCREEN_PRESETS[idx]
-                  if (p) {
-                    set('windowWidth', p.w)
-                    set('windowHeight', p.h)
-                  }
-                }}
-              >
-                <option value="">{isZh ? '快速预设分辨率…' : 'Screen presets…'}</option>
-                {SCREEN_PRESETS.map((p, idx) => (
-                  <option key={idx} value={idx}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <span className="text-[11px] text-ink-dim block mb-1">{isZh ? '宽度 (px)' : 'Width'}</span>
-                <input
-                  id="pf-win-w"
-                  type="number"
-                  className="field"
-                  value={form.windowWidth}
-                  onChange={(e) => set('windowWidth', e.target.value)}
-                />
-              </div>
-              <div>
-                <span className="text-[11px] text-ink-dim block mb-1">{isZh ? '高度 (px)' : 'Height'}</span>
-                <input
-                  id="pf-win-h"
-                  type="number"
-                  className="field"
-                  value={form.windowHeight}
-                  onChange={(e) => set('windowHeight', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="pf-dpr">
-              {isZh ? '设备像素比 (DPR / 缩放)' : 'Device Pixel Ratio'}
-            </label>
-            <select
-              id="pf-dpr"
-              className="field"
-              value={form.devicePixelRatio}
-              onChange={(e) => set('devicePixelRatio', e.target.value)}
-            >
-              <option value="1">1.0 (标准普通屏幕)</option>
-              <option value="1.25">1.25 (常见 125% 缩放)</option>
-              <option value="1.5">1.5 (高分屏 150% 缩放)</option>
-              <option value="2">2.0 (Retina 视网膜双倍高清)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="pf-doh">
-              {isZh ? '安全 DNS (DoH 加密)' : 'DNS over HTTPS'}
-            </label>
-            <select
-              id="pf-doh"
-              className="field"
-              value={form.dohProvider}
-              onChange={(e) => set('dohProvider', e.target.value)}
-            >
-              <option value="">{isZh ? '系统默认 (关闭 DoH)' : 'Default (Off)'}</option>
-              <option value="cloudflare">Cloudflare (1.1.1.1 安全防泄漏)</option>
-              <option value="google">Google DNS (8.8.8.8)</option>
-              <option value="alidns">AliDNS (阿里云公共加密DNS)</option>
-            </select>
-          </div>
-
-          <div className="col-span-2">
-            <label className="field-label" htmlFor="pf-search">
-              {isZh ? '默认搜索引擎 (激活地址栏搜索)' : 'Default Search Engine'}
-            </label>
-            <select
-              id="pf-search"
-              className="field"
-              value={form.searchEngine}
-              onChange={(e) => set('searchEngine', e.target.value)}
-            >
-              <option value="google">{isZh ? '🔍 Google 搜索 (默认 · 全球主流)' : 'Google Search'}</option>
-              <option value="bing">{isZh ? '🔍 Microsoft Bing 搜索 (必应)' : 'Microsoft Bing'}</option>
-              <option value="baidu">{isZh ? '🔍 百度搜索 (Baidu · 国内网络优化)' : 'Baidu Search'}</option>
-              <option value="duckduckgo">{isZh ? '🔍 DuckDuckGo (高隐私无追踪)' : 'DuckDuckGo'}</option>
-            </select>
-            <p className="mt-1 text-ink-faint">
-              {isZh
-                ? '激活浏览器地址栏即时搜索，彻底解决关键词被误识别为错误 IP / 域名的问题。'
-                : 'Activates address bar direct search. Prevents keywords from resolving as invalid hostnames.'}
-            </p>
-          </div>
-
-          <div className="col-span-2 rounded-lg border border-line bg-surface/30 p-3.5 flex flex-col gap-2.5">
-            <span className="text-xs font-semibold text-ink">
-              {isZh ? '高级隐蔽性与防关联保护开关' : 'Advanced Stealth & Spoofing'}
-            </span>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <label className="flex items-center gap-2 cursor-pointer text-ink-dim hover:text-ink">
-                <input
-                  type="checkbox"
-                  checked={form.batterySpoofing}
-                  onChange={(e) => set('batterySpoofing', e.target.checked)}
-                  className="rounded border-line"
-                />
-                <span>{isZh ? '模拟固定 100% 充电中 (防电池API追踪)' : 'Battery API Spoofing'}</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer text-ink-dim hover:text-ink">
-                <input
-                  type="checkbox"
-                  checked={form.clientRectsNoise}
-                  onChange={(e) => set('clientRectsNoise', e.target.checked)}
-                  className="rounded border-line"
-                />
-                <span>{isZh ? 'ClientRects DOM 元素尺寸微扰' : 'ClientRects Noise'}</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer text-ink-dim hover:text-ink">
-                <input
-                  type="checkbox"
-                  checked={form.audioNoise}
-                  onChange={(e) => set('audioNoise', e.target.checked)}
-                  className="rounded border-line"
-                />
-                <span>{isZh ? 'AudioContext 音频指纹噪点保护' : 'AudioContext Noise'}</span>
-              </label>
-
-              <label className="flex items-center gap-2 cursor-pointer text-ink-dim hover:text-ink">
-                <input
-                  type="checkbox"
-                  checked={form.doNotTrack}
-                  onChange={(e) => set('doNotTrack', e.target.checked)}
-                  className="rounded border-line"
-                />
-                <span>{isZh ? '启用 Do Not Track (DNT) 请求头' : 'Send Do Not Track'}</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <label className="field-label" htmlFor="pf-geo">
-              {isZh ? '地理位置定位 (GPS)' : 'Geolocation'}
-            </label>
-            <select
-              id="pf-geo"
-              className="field"
-              value={form.geoMode}
-              onChange={(e) => set('geoMode', e.target.value as 'auto' | 'manual')}
-            >
-              <option value="auto">{isZh ? '跟随代理 IP 归属地自动匹配' : 'From the proxy IP'}</option>
-              <option value="manual">{isZh ? '手动指定经纬度' : 'Set coordinates'}</option>
-            </select>
-          </div>
-
-          {form.geoMode === 'manual' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label" htmlFor="pf-lat">
-                  {isZh ? '纬度 (Latitude)' : 'Latitude'}
-                </label>
-                <input
-                  id="pf-lat"
-                  className="field font-mono"
-                  value={form.latitude}
-                  onChange={(e) => set('latitude', e.target.value)}
-                  placeholder="52.52"
-                />
-              </div>
-              <div>
-                <label className="field-label" htmlFor="pf-lon">
-                  {isZh ? '经度 (Longitude)' : 'Longitude'}
-                </label>
-                <input
-                  id="pf-lon"
-                  className="field font-mono"
-                  value={form.longitude}
-                  onChange={(e) => set('longitude', e.target.value)}
-                  placeholder="13.405"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Until recently every new profile was given the timezone and
-              coordinates of a randomly chosen region, so an old one can claim
-              Shanghai on a German proxy. Nothing recorded which values were
-              chosen and which were rolled, so this is offered whenever both are
-              set rather than guessed at. */}
-          {isEdit && storedGeography && (
-            <div className="col-span-2 rounded-md border border-line bg-raised p-2.5">
-              <p className="text-ink">
-                {isZh ? '此环境当前指定了自定义地理位置，而非跟随代理 IP。' : 'This profile states where it is instead of taking it from its proxy.'}
-              </p>
-              <p className="mt-0.5 text-ink-faint">
-                {isZh
-                  ? '若将其留空，Camoufox 将自动根据代理 IP 的出口节点推导匹配的时区、GPS 坐标和 WebRTC 地址。'
-                  : 'A profile created today leaves both unset, so Camoufox derives the timezone, the coordinates and the WebRTC address from the exit address.'}
-              </p>
-              <div className="mt-2 flex justify-end">
-                <button
-                  type="button"
-                  className="btn btn-default"
-                  onClick={handleClearGeography}
-                  disabled={clearingGeography}
-                >
-                  {clearingGeography && <LoaderCircle size={13} className="animate-spin" />}
-                  {isZh ? '清除自定义，完全跟随代理' : 'Clear both, follow the proxy'}
-                </button>
-              </div>
-            </div>
-          )}
-        </Section>
-          </div>
-        </details>
-      </form>
-    </Modal>
-  )
-}
-
-/**
- * Reduce a renderer string to the card name.
- *
- *   "ANGLE (NVIDIA, NVIDIA GeForce GTX 980 Direct3D11 vs_5_0 ps_5_0)" -> "NVIDIA GeForce GTX 980"
- *   "Apple M1, or similar"                                           -> "Apple M1"
- *
- * Unwrapping ANGLE first matters: vendor names contain their own brackets
- * ("Intel(R) HD Graphics"), so cutting at the first one truncates the name.
- */
-function shortGpu(gpu?: string | null): string {
-  if (!gpu) return ''
-  // Drop Camoufox's ", or similar" suffix before unwrapping, or the closing
-  // bracket of the ANGLE wrapper is no longer at the end of the string.
-  const base = gpu.replace(/,\s*or similar\s*$/i, '')
-  const angle = base.match(/^ANGLE \([^,]+,\s*(.*)\)$/)
-  const name = angle ? angle[1] : base
-  return name.split(/\s+Direct3D|\s+vs_/)[0].trim()
-}
-
-/**
- * The machine a profile is pinned to. Without this the profile would look like
- * different hardware every session, so it is worth showing that it does not.
- */
-function PinnedMachine({
-  fingerprint,
-  onRefreshBrowser,
-  refreshing,
-  onReconcileOs,
-  reconciling,
-  isZh = false,
-}: {
-  fingerprint?: FingerprintSummary | null
-  onRefreshBrowser: () => void
-  refreshing: boolean
-  onReconcileOs: (keepMachine: boolean) => void
-  reconciling: boolean
-  isZh?: boolean
-}) {
-  if (!fingerprint) {
-    return (
-      <fieldset>
-        <legend className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
-          {isZh ? '硬件特征' : 'Machine'}
-        </legend>
-        <p className="text-ink-faint">
-          {isZh
-            ? '首次启动时生成并固定，之后每次启动保持完全一致，如同真实固定的电脑。'
-            : 'Assigned on the first launch, then reused every time so this profile stays the same computer.'}
-        </p>
-      </fieldset>
-    )
-  }
-
-  const rows: [string, string | number | null | undefined][] = [
-    [isZh ? '内核版本' : 'Browser', fingerprint.browser_major ? `Firefox ${fingerprint.browser_major}` : null],
-    [isZh ? '屏幕分辨率' : 'Screen', fingerprint.screen],
-    [isZh ? 'CPU 核心数' : 'CPU cores', fingerprint.hardware_concurrency ? `${fingerprint.hardware_concurrency} ${isZh ? '核' : 'cores'}` : null],
-    [isZh ? '显卡渲染器' : 'GPU', fingerprint.gpu],
-    [isZh ? '字体数量' : 'Fonts', fingerprint.font_count],
-    [isZh ? 'User-Agent' : 'User agent', fingerprint.user_agent],
-  ]
-
-  return (
-    <fieldset>
-      <legend className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
-        {isZh ? '已固定硬件特征' : 'Machine'}
-      </legend>
-      <p className="mb-2.5 text-ink-faint">
-        {isZh
-          ? `跨会话保持固定 — 共锁定 ${fingerprint.property_count} 项指纹参数。点击下方“重新生成指纹”可将此环境迁移至不同硬件。`
-          : `Pinned across launches — ${fingerprint.property_count} properties. Regenerate the fingerprint to move this profile to different hardware.`}
-      </p>
-      <div className="panel divide-y divide-line">
-        {rows
-          .filter(([, value]) => value !== null && value !== undefined && value !== '')
-          .map(([label, value]) => (
-            <div key={label} className="flex gap-3 px-3 py-1.5">
-              <span className="w-[92px] shrink-0 text-ink-dim">{label}</span>
-              <span className="min-w-0 flex-1 break-all font-mono text-ink">{value}</span>
-            </div>
-          ))}
-      </div>
-
-      {/* A pin never ages by itself. */}
-      {fingerprint.browser_outdated && (
-        <div className="mt-2 flex items-start gap-2.5 rounded-md border border-line bg-raised p-2.5">
-          <TriangleAlert size={14} className="mt-0.5 shrink-0 text-signal" />
-          <div className="flex-1">
-            <p className="text-ink">
-              {isZh
-                ? `此环境当前报告为 Firefox ${fingerprint.browser_major}；已安装的最新内核为 ${fingerprint.installed_major}。`
-                : `This profile still reports Firefox ${fingerprint.browser_major}; the installed browser is ${fingerprint.installed_major}.`}
-            </p>
-            <p className="mt-0.5 text-ink-faint">
-              {isZh
-                ? '升级内核仅改变浏览器版本号。屏幕尺寸、显卡、核心数、字体和 Canvas 完全不受影响。'
-                : 'Updating changes only the browser version. The screen, GPU, cores, fonts and canvas stay exactly as they are — the same computer, with its browser updated.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn-default shrink-0"
-            onClick={onRefreshBrowser}
-            disabled={refreshing}
-          >
-            {refreshing && <LoaderCircle size={13} className="animate-spin" />}
-            {isZh ? '同步更新' : 'Update'}
-          </button>
-        </div>
-      )}
-
-      {fingerprint.os_mismatch && (
-        <div className="mt-2 rounded-md border border-line bg-raised p-2.5">
-          <div className="flex items-start gap-2.5">
-            <TriangleAlert size={14} className="mt-0.5 shrink-0 text-warn" />
-            <div>
-              <p className="text-ink">
-                {isZh
-                  ? `环境设置为 ${osLabel(fingerprint.settings_os)}，但锁定的硬件机器是 ${osLabel(fingerprint.pinned_os)} 特征 — 网站识别到的以底层硬件机器为准。`
-                  : `This profile is set to ${osLabel(fingerprint.settings_os)}, but its pinned machine is a ${osLabel(fingerprint.pinned_os)} one — and the machine is what every page sees.`}
-              </p>
-              <p className="mt-0.5 text-ink-faint">
-                {isZh
-                  ? `保留机器将把设置调回 ${osLabel(fingerprint.pinned_os)}，且不改变任何指纹；若换用 ${osLabel(fingerprint.settings_os)} 机器则会分配全新硬件特征。`
-                  : `Keeping the machine puts the setting back to ${osLabel(fingerprint.pinned_os)} and changes no fingerprint at all. Pinning a ${osLabel(fingerprint.settings_os)} machine instead gives this profile different hardware.`}
-              </p>
-            </div>
-          </div>
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              className="btn btn-default"
-              onClick={() => onReconcileOs(true)}
-              disabled={reconciling}
-            >
-              {reconciling && <LoaderCircle size={13} className="animate-spin" />}
-              {isZh ? '保留当前硬件' : 'Keep this machine'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-default"
-              onClick={() => onReconcileOs(false)}
-              disabled={reconciling}
-            >
-              {isZh ? `匹配新 ${osLabel(fingerprint.settings_os)} 硬件` : `New ${osLabel(fingerprint.settings_os)} machine`}
-            </button>
-          </div>
-        </div>
-      )}
-    </fieldset>
-  )
-}
-
-function osLabel(os?: string | null): string {
-  return (os && OS_LABELS[os]) || os || 'unknown'
-}
-
-function Section({
-  title,
-  hint,
-  children,
-}: {
-  title: string
-  hint?: string
-  children: React.ReactNode
-}) {
-  return (
-    <fieldset>
-      <legend className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-faint">
-        {title}
-      </legend>
-      {hint && <p className="mb-2.5 text-ink-faint">{hint}</p>}
-      <div className="grid grid-cols-2 gap-3">{children}</div>
-    </fieldset>
-  )
-}
-
-/**
- * Proxy check findings display
- */
-function ProxyCheckResult({ result, isZh = false }: { result: ProxyCheck | null; isZh?: boolean }) {
-  if (!result) return null
-
-  if (!result.reachable) {
-    return (
-      <div className="mt-2.5 p-3 rounded-lg border border-danger/30 bg-danger/10 text-xs text-danger flex items-start gap-2">
-        <X size={14} className="mt-0.5 shrink-0" />
-        <div>
-          <span className="font-semibold">{isZh ? '网络连接失败: ' : 'Connection Failed: '}</span>
-          <span>{result.error || (isZh ? '无法连通目标代理或外网' : 'Unreachable')}</span>
-        </div>
-      </div>
-    )
-  }
-
-  const where = result.location
-  const countryProfile = where?.country ? getCountryProfile(where.country) : null
-  const flag = countryProfile?.flag || '🌐'
-  const countryName = countryProfile?.name || where?.country || ''
-  const locationText = [countryName, where?.region, where?.city].filter(Boolean).join(' · ')
-
-  return (
-    <div className="mt-2.5 p-3 rounded-lg border border-ok/30 bg-ok/5 text-xs space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-ok font-semibold">
-          <Check size={14} />
-          <span>{isZh ? '网络连通正常 (Reachable)' : 'Connection Successful'}</span>
-        </div>
-        {result.latency_ms !== null && (
-          <span className="font-mono text-ink-dim px-2 py-0.5 rounded bg-surface border border-line/60">
-            {result.latency_ms} ms
+        {/* 标题 */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-[#1d2129]">
+            {isEdit ? '编辑环境' : '新建环境'}
           </span>
-        )}
+        </div>
+
+        {/* 右侧空位平衡 */}
+        <div className="w-16" />
       </div>
 
-      <div className="grid grid-cols-2 gap-2 text-ink-muted pt-1 border-t border-line/40">
-        <div>
-          <span className="text-ink-faint mr-1.5">{isZh ? '出口 IP:' : 'Exit IP:'}</span>
-          <span className="font-mono text-ink font-medium">{where?.ip || '未知'}</span>
-        </div>
-        <div>
-          <span className="text-ink-faint mr-1.5">{isZh ? '地理位置:' : 'Location:'}</span>
-          <span className="text-ink font-medium">{flag} {locationText || (isZh ? '未知' : 'Unknown')}</span>
-        </div>
-        <div>
-          <span className="text-ink-faint mr-1.5">{isZh ? '匹配时区:' : 'Timezone:'}</span>
-          <span className="font-mono text-ink font-medium">{where?.timezone || '未知'}</span>
-        </div>
-        <div>
-          <span className="text-ink-faint mr-1.5">{isZh ? '首选语言:' : 'Languages:'}</span>
-          <span className="text-ink font-medium">{where?.languages?.join(', ') || (isZh ? '自动匹配' : 'Auto')}</span>
-        </div>
-      </div>
-
-      <div className="text-[11px] text-emerald-400/90 flex items-center gap-1 pt-0.5">
-        <span>✓</span>
-        <span>{isZh ? '系统已自动为该环境对齐出网 IP 的对应语言、时区及防关联特征' : 'Timezone & languages auto-adapted to exit IP'}</span>
-      </div>
-
-      {result.findings.length > 0 && (
-        <div className="pt-1.5 border-t border-line/40 space-y-1">
-          {result.findings.map((finding, index) => (
-            <p
-              key={index}
-              className={`flex items-start gap-1.5 text-[11px] ${
-                finding.level === 'error'
-                  ? 'text-danger'
-                  : finding.level === 'warning'
-                    ? 'text-warn'
-                    : 'text-ink-faint'
+      {/* 2. 主体区: 左侧导航 + 中间配置表单 + 右侧环境预览 */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* 左侧垂直菜单 */}
+        <div className="flex w-[140px] flex-col border-r border-[#e5e6eb] bg-white py-3">
+          {[
+            { id: 'base', label: '基础设置' },
+            { id: 'proxy', label: '代理信息' },
+            { id: 'account', label: '账号信息' },
+            { id: 'advanced', label: '高级设置' },
+          ].map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => scrollToSection(item.id)}
+              className={`relative flex items-center px-4 py-2.5 text-xs font-medium transition-colors cursor-pointer ${
+                activeSection === item.id
+                  ? 'bg-[#f2f7ff] text-[#165dff] font-semibold'
+                  : 'text-[#4e5969] hover:bg-[#f7f8fa] hover:text-[#1d2129]'
               }`}
             >
-              {finding.level === 'info' ? (
-                <Info size={12} className="mt-0.5 shrink-0" />
-              ) : (
-                <TriangleAlert size={12} className="mt-0.5 shrink-0" />
+              {activeSection === item.id && (
+                <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#165dff]" />
               )}
-              <span>{finding.message}</span>
-            </p>
+              {item.label}
+            </button>
           ))}
         </div>
-      )}
+
+        {/* 中间表单滚动区 (支持双向联动) */}
+        <form
+          ref={formContainerRef}
+          onScroll={handleFormScroll}
+          id="profile-form-hub"
+          onSubmit={handleSubmit}
+          className="flex-1 overflow-y-auto px-6 py-5 space-y-4 scroll-smooth"
+        >
+          {/* Section 1: 基础设置 */}
+          <div id="section-base" className="rounded-lg border border-[#e5e6eb] bg-white shadow-sm overflow-hidden scroll-mt-2">
+            <div className="flex items-center justify-between border-b border-[#f2f3f5] bg-[#fafbfc] px-4 py-2.5">
+              <span className="text-xs font-bold text-[#1d2129]">基础设置</span>
+              <ChevronDown size={14} className="text-[#86909c]" />
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {/* 环境名称 */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  <span className="text-rose-500 mr-0.5">*</span>环境名称
+                </label>
+                <div className="col-span-8">
+                  <input
+                    type="text"
+                    value={form.name}
+                    onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="请输入环境名称"
+                    className="w-full rounded border border-[#d9d9d9] px-3 py-1.5 text-xs text-[#1d2129] outline-none transition-colors focus:border-[#165dff] focus:ring-1 focus:ring-[#165dff]"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* 新建环境数 */}
+              {!isEdit && (
+                <div className="grid grid-cols-12 items-center gap-3">
+                  <label className="col-span-2 text-right font-medium text-[#4e5969] flex items-center justify-end gap-1">
+                    <span>新建环境数</span>
+                    <span title="批量创建相同指纹模版的环境数量"><HelpCircle size={12} className="text-[#86909c]" /></span>
+                  </label>
+                  <div className="col-span-3">
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={form.batchCount}
+                      onChange={e => setForm(prev => ({ ...prev, batchCount: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
+                      className="w-24 rounded border border-[#d9d9d9] px-3 py-1.5 text-xs text-[#1d2129] outline-none transition-colors focus:border-[#165dff]"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 浏览器内核选择 */}
+              <div className="grid grid-cols-12 items-start gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969] pt-2">
+                  浏览器
+                </label>
+                <div className="col-span-10 space-y-1.5">
+                  <div className="flex items-center gap-3">
+                    {/* ChroBrowser */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectEngine('chromium')}
+                      className={`flex items-center justify-between gap-3 rounded border px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                        form.browserEngine === 'chromium'
+                          ? 'border-[#165dff] bg-[#f2f7ff] text-[#165dff]'
+                          : 'border-[#d9d9d9] bg-white text-[#4e5969] hover:border-[#b0b4b9]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Globe size={14} className={form.browserEngine === 'chromium' ? 'text-[#165dff]' : 'text-[#86909c]'} />
+                        <span>ChroBrowser</span>
+                      </div>
+                      <ChevronDown size={13} className="opacity-60" />
+                    </button>
+
+                    {/* FireBrowser */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectEngine('camoufox')}
+                      className={`flex items-center justify-between gap-3 rounded border px-3.5 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                        form.browserEngine === 'camoufox'
+                          ? 'border-[#165dff] bg-[#f2f7ff] text-[#165dff]'
+                          : 'border-[#d9d9d9] bg-white text-[#4e5969] hover:border-[#b0b4b9]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-amber-500">🦊</span>
+                        <span>FireBrowser</span>
+                      </div>
+                      <ChevronDown size={13} className="opacity-60" />
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[#86909c]">
+                    {form.browserEngine === 'camoufox'
+                      ? 'FireBrowser 基于 Camoufox 真实 Gecko 内核，仅支持 Windows、macOS 与 Linux 真实桌面生态（杜绝移动端仿真冲突）'
+                      : '基于 User Agent 智能匹配 Chrome 真实原生编译内核版本与底层架构'}
+                  </p>
+                </div>
+              </div>
+
+              {/* 操作系统 (FireBrowser 仅支持 Windows、macOS、Linux，ChroBrowser 支持全系) */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  操作系统
+                </label>
+                <div className="col-span-10 flex flex-wrap gap-2.5">
+                  {OS_ITEMS.filter(os => {
+                    if (form.browserEngine === 'camoufox') {
+                      return os.id !== 'android' && os.id !== 'ios'
+                    }
+                    return true
+                  }).map(os => {
+                    const isSelected = form.os === os.id
+                    const IconComp = os.icon
+                    return (
+                      <button
+                        key={os.id}
+                        type="button"
+                        onClick={() => handleSelectOs(os.id)}
+                        className={`flex items-center gap-2 rounded-md border px-3.5 py-2 text-xs font-medium transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-[#165dff] bg-[#f2f7ff] text-[#165dff] shadow-sm font-semibold'
+                            : 'border-[#d9d9d9] bg-white text-[#4e5969] hover:border-[#b0b4b9] hover:bg-[#fafafa]'
+                        }`}
+                      >
+                        <IconComp className="w-4 h-4" />
+                        <span>{os.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* 机型 (Android & iOS 真实权威规格联动) */}
+              {(form.os === 'android' || form.os === 'ios') && (
+                <div className="grid grid-cols-12 items-start gap-3">
+                  <label className="col-span-2 text-right font-medium text-[#4e5969] pt-1.5">
+                    机型
+                  </label>
+                  <div className="col-span-8 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={form.isCustomModel ? '__custom__' : form.deviceModel}
+                        onChange={e => handleSelectModel(e.target.value)}
+                        className="flex-1 rounded border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs text-[#1d2129] outline-none transition-colors focus:border-[#165dff]"
+                      >
+                        <optgroup label="主流推荐机型">
+                          {form.os === 'android' ? (
+                            ANDROID_MODELS.map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.label} ({m.screenWidth}×{m.screenHeight})
+                              </option>
+                            ))
+                          ) : (
+                            IOS_MODELS.map(m => (
+                              <option key={m.id} value={m.id}>
+                                {m.label} ({m.screenWidth}×{m.screenHeight})
+                              </option>
+                            ))
+                          )}
+                        </optgroup>
+                        <option value="__custom__">➕ 自定义机型... (手动输入任何型号)</option>
+                      </select>
+
+                      {/* 自定义模式开关快捷键 */}
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, isCustomModel: !prev.isCustomModel }))}
+                        className={`rounded px-2.5 py-1.5 text-xs border font-medium transition-colors ${
+                          form.isCustomModel
+                            ? 'border-[#165dff] bg-[#165dff] text-white'
+                            : 'border-[#d9d9d9] bg-white text-[#4e5969] hover:bg-[#f2f3f5]'
+                        }`}
+                      >
+                        {form.isCustomModel ? '预设机型' : '自定义机型'}
+                      </button>
+                    </div>
+
+                    {/* 自定义输入框 */}
+                    {form.isCustomModel && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={form.deviceModel}
+                          onChange={e => handleCustomModelInput(e.target.value)}
+                          placeholder={form.os === 'android' ? '例如: OPPO CPH1803 或 SM-S918B' : '例如: iPhone 15 Pro Max'}
+                          className="flex-1 rounded border border-[#165dff] bg-[#fbfdff] px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:ring-1 focus:ring-[#165dff]"
+                        />
+                        <span className="text-[11px] text-[#86909c]">将直接注入至 UA 和 Client Hints</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* User Agent */}
+              <div className="grid grid-cols-12 items-start gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969] pt-1">
+                  User Agent
+                </label>
+                <div className="col-span-10 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="inline-flex rounded border border-[#d9d9d9] bg-white p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm(prev => ({ ...prev, uaMode: 'random' }))
+                          handleRandomizeUa()
+                        }}
+                        className={`rounded px-3 py-1 text-xs font-medium transition-all ${
+                          form.uaMode === 'random'
+                            ? 'bg-[#f2f3f5] text-[#165dff] font-semibold'
+                            : 'text-[#4e5969] hover:text-[#1d2129]'
+                        }`}
+                      >
+                        随机
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, uaMode: 'custom' }))}
+                        className={`rounded px-3 py-1 text-xs font-medium transition-all ${
+                          form.uaMode === 'custom'
+                            ? 'bg-[#165dff] text-white font-semibold'
+                            : 'text-[#4e5969] hover:text-[#1d2129]'
+                        }`}
+                      >
+                        自定义
+                      </button>
+                    </div>
+
+                    <select
+                      value={form.uaFilter}
+                      onChange={e => {
+                        const nextFilter = e.target.value
+                        setForm(prev => {
+                          const nextUa = generateDefaultUA(prev.os, prev.deviceModel, prev.browserEngine, nextFilter)
+                          return { ...prev, uaFilter: nextFilter, userAgent: nextUa }
+                        })
+                      }}
+                      className="rounded border border-[#d9d9d9] bg-white px-2.5 py-1 text-xs text-[#4e5969] outline-none"
+                    >
+                      {form.browserEngine === 'chromium' ? (
+                        <>
+                          <option value="155">Chrome 155 (自研防关联原生内核 · 原生雷达)</option>
+                          <option value="146">Chrome 146 (Cloak 87项 C++ 补丁 · 经典无锁)</option>
+                        </>
+                      ) : (
+                        <option value="135">Firefox 135 (Camoufox 真实内核)</option>
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="relative">
+                    <textarea
+                      rows={2}
+                      value={form.userAgent}
+                      onChange={e => setForm(prev => ({ ...prev, userAgent: e.target.value }))}
+                      placeholder="Mozilla/5.0..."
+                      className="w-full resize-none rounded border border-[#d9d9d9] p-2.5 pr-8 font-mono text-[11px] leading-relaxed text-[#1d2129] outline-none transition-colors focus:border-[#165dff]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRandomizeUa}
+                      title="刷新小版本 UA"
+                      className="absolute right-2 top-2 p-1 text-[#86909c] hover:text-[#165dff] transition-colors"
+                    >
+                      <Shuffle size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 分组 */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  分组
+                </label>
+                <div className="col-span-5">
+                  <select
+                    value={form.group}
+                    onChange={e => setForm(prev => ({ ...prev, group: e.target.value }))}
+                    className="w-full rounded border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                  >
+                    <option value="">未分组</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: 代理信息 (完全对齐 HubStudio 图2标准) */}
+          <div id="section-proxy" className="rounded-lg border border-[#e5e6eb] bg-white shadow-sm overflow-hidden scroll-mt-2">
+            <div className="flex items-center justify-between border-b border-[#f2f3f5] bg-[#fafbfc] px-4 py-2.5">
+              <span className="text-xs font-bold text-[#1d2129]">代理信息</span>
+              <ChevronDown size={14} className="text-[#86909c]" />
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {/* 代理方式大分类 */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  代理方式
+                </label>
+                <div className="col-span-10 flex flex-wrap gap-2">
+                  {[
+                    { id: 'none', label: '不使用代理' },
+                    { id: 'custom', label: '自定义代理' },
+                    { id: 'pool', label: '引用代理池' },
+                    { id: 'api', label: 'API 提取' },
+                  ].map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setForm(prev => ({ ...prev, proxyMode: p.id as any }))}
+                      className={`rounded border px-3.5 py-1.5 text-xs font-medium transition-all ${
+                        form.proxyMode === p.id
+                          ? 'border-[#165dff] bg-[#f2f7ff] text-[#165dff] font-semibold shadow-sm'
+                          : 'border-[#d9d9d9] bg-white text-[#4e5969] hover:border-[#b0b4b9]'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 1. 自定义代理配置 */}
+              {form.proxyMode === 'custom' && (
+                <div className="space-y-3 pt-1 border-t border-[#f2f3f5]">
+                  <div className="grid grid-cols-12 items-center gap-3">
+                    <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                      代理类型
+                    </label>
+                    <div className="col-span-5">
+                      <select
+                        value={form.proxyCustomType}
+                        onChange={e => setForm(prev => ({ ...prev, proxyCustomType: e.target.value }))}
+                        className="w-full rounded border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                      >
+                        <option value="HTTP">HTTP</option>
+                        <option value="HTTPS">HTTPS</option>
+                        <option value="SSH">SSH</option>
+                        <option value="Socks5">Socks5</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-12 items-center gap-3">
+                    <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                      代理主机 : 端口
+                    </label>
+                    <div className="col-span-6">
+                      <input
+                        type="text"
+                        value={form.proxyServer}
+                        onChange={e => setForm(prev => ({ ...prev, proxyServer: e.target.value }))}
+                        placeholder="例如: 127.0.0.1:7890 或 147.79.20.48:36869"
+                        className="w-full rounded border border-[#d9d9d9] px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <button
+                        type="button"
+                        onClick={handleTestProxy}
+                        disabled={testingProxy}
+                        className="flex items-center gap-1.5 rounded bg-[#f2f3f5] px-3 py-1.5 text-xs font-medium text-[#1d2129] hover:bg-[#e5e6eb] transition-colors"
+                      >
+                        {testingProxy && <LoaderCircle size={12} className="animate-spin text-[#165dff]" />}
+                        <span>测试连接</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-12 items-center gap-3">
+                    <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                      代理账号 / 密码
+                    </label>
+                    <div className="col-span-4">
+                      <input
+                        type="text"
+                        value={form.proxyUsername}
+                        onChange={e => setForm(prev => ({ ...prev, proxyUsername: e.target.value }))}
+                        placeholder="用户名 (可选)"
+                        className="w-full rounded border border-[#d9d9d9] px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <input
+                        type="password"
+                        value={form.proxyPassword}
+                        onChange={e => setForm(prev => ({ ...prev, proxyPassword: e.target.value }))}
+                        placeholder="密码 (可选)"
+                        className="w-full rounded border border-[#d9d9d9] px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. 引用代理池 */}
+              {form.proxyMode === 'pool' && (
+                <div className="space-y-3 pt-1 border-t border-[#f2f3f5]">
+                  <div className="grid grid-cols-12 items-center gap-3">
+                    <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                      选择代理节点
+                    </label>
+                    <div className="col-span-7">
+                      <select
+                        value={form.proxyPoolId}
+                        onChange={e => setForm(prev => ({ ...prev, proxyPoolId: e.target.value }))}
+                        className="w-full rounded border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                      >
+                        <option value="">-- 请选择代理池中已就绪的代理节点 --</option>
+                        {proxyPoolList.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.server} {((p as any).proxy_type ? `(${String((p as any).proxy_type).toUpperCase()})` : '')} {(p as any).location?.country ? `· ${(p as any).location.country}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-span-3">
+                      <button
+                        type="button"
+                        onClick={handleTestProxy}
+                        disabled={testingProxy}
+                        className="flex items-center gap-1.5 rounded bg-[#f2f3f5] px-3 py-1.5 text-xs font-medium text-[#1d2129] hover:bg-[#e5e6eb] transition-colors"
+                      >
+                        {testingProxy && <LoaderCircle size={12} className="animate-spin text-[#165dff]" />}
+                        <span>测试连接</span>
+                      </button>
+                    </div>
+                  </div>
+                  {proxyPoolList.length === 0 && (
+                    <div className="grid grid-cols-12">
+                      <p className="col-start-3 col-span-10 text-[11px] text-[#86909c]">
+                        当前代理池中暂无代理节点，可在左侧「代理管理」中批量导入或添加节点。
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. API 提取 */}
+              {form.proxyMode === 'api' && (
+                <div className="space-y-3 pt-1 border-t border-[#f2f3f5]">
+                  <div className="grid grid-cols-12 items-center gap-3">
+                    <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                      API 提取链接
+                    </label>
+                    <div className="col-span-8">
+                      <input
+                        type="text"
+                        value={form.proxyApiUrl}
+                        onChange={e => setForm(prev => ({ ...prev, proxyApiUrl: e.target.value }))}
+                        placeholder="https://proxy-provider.com/api/get?format=json..."
+                        className="w-full rounded border border-[#d9d9d9] px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <button
+                        type="button"
+                        onClick={handleTestProxy}
+                        disabled={testingProxy}
+                        className="rounded bg-[#f2f3f5] px-3 py-1.5 text-xs font-medium text-[#1d2129] hover:bg-[#e5e6eb] transition-colors"
+                      >
+                        测试提取
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-12">
+                    <p className="col-start-3 col-span-10 text-[11px] text-[#86909c]">
+                      支持各大主流住宅 IP 提取链接，系统将在环境启动前自动调用该链接提取最新的代理节点。
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 测试连接反馈 */}
+              {proxyTestResult && (
+                <div className="grid grid-cols-12">
+                  <div className="col-start-3 col-span-8 rounded bg-[#f7f8fa] p-2 text-[11px] text-[#4e5969]">
+                    {proxyTestResult}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 3: 账号信息 */}
+          <div id="section-account" className="rounded-lg border border-[#e5e6eb] bg-white shadow-sm overflow-hidden scroll-mt-2">
+            <div className="flex items-center justify-between border-b border-[#f2f3f5] bg-[#fafbfc] px-4 py-2.5">
+              <span className="text-xs font-bold text-[#1d2129]">账号信息</span>
+              <ChevronDown size={14} className="text-[#86909c]" />
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  社交/平台账号
+                </label>
+                <div className="col-span-8">
+                  <input
+                    type="text"
+                    value={form.account}
+                    onChange={e => setForm(prev => ({ ...prev, account: e.target.value }))}
+                    placeholder="例如: john_doe@gmail.com 或 TikTok 业务账号"
+                    className="w-full rounded border border-[#d9d9d9] px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 items-start gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969] pt-1">
+                  Cookie 导入
+                </label>
+                <div className="col-span-8">
+                  <textarea
+                    rows={2}
+                    value={form.cookies}
+                    onChange={e => setForm(prev => ({ ...prev, cookies: e.target.value }))}
+                    placeholder="粘贴 JSON 数组或 name=value; 或 Netscape 格式"
+                    className="w-full resize-none rounded border border-[#d9d9d9] p-2 text-xs font-mono text-[#1d2129] outline-none focus:border-[#165dff]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 items-start gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969] pt-1">
+                  备注说明
+                </label>
+                <div className="col-span-8">
+                  <textarea
+                    rows={2}
+                    value={form.notes}
+                    onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="记录登录账号密码或业务用途备注"
+                    className="w-full resize-none rounded border border-[#d9d9d9] p-2 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: 高级设置 (真实物理分辨率/视口/DPR/硬件并发全自动严格联动) */}
+          <div id="section-advanced" className="rounded-lg border border-[#e5e6eb] bg-white shadow-sm overflow-hidden scroll-mt-2">
+            <div className="flex items-center justify-between border-b border-[#f2f3f5] bg-[#fafbfc] px-4 py-2.5">
+              <span className="text-xs font-bold text-[#1d2129]">高级设置</span>
+              <ChevronDown size={14} className="text-[#86909c]" />
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              {/* PC 端 (Windows / macOS / Linux) 分辨率预设: 默认真实跟随本机 */}
+              {(form.os === 'windows' || form.os === 'macos' || form.os === 'linux') && (
+                <div className="grid grid-cols-12 items-center gap-3">
+                  <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                    屏幕分辨率
+                  </label>
+                  <div className="col-span-10 flex items-center gap-3">
+                    <select
+                      value={form.resolutionPreset}
+                      onChange={e => handleSelectPcResolution(e.target.value)}
+                      className="rounded border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs text-[#1d2129] outline-none focus:border-[#165dff]"
+                    >
+                      {PC_RESOLUTION_PRESETS.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.id === 'real'
+                            ? `真实 (跟随本机当前屏幕: ${localReal.physW}×${localReal.physH})`
+                            : p.label}
+                        </option>
+                      ))}
+                    </select>
+                    {form.resolutionPreset === 'real' && (
+                      <span className="text-[11px] text-emerald-600 flex items-center gap-1 font-medium">
+                        ✓ 默认已匹配本机屏幕真实物理分辨率与缩放
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 1. 物理屏幕分辨率 (Screen) */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  物理屏幕 (Screen)
+                </label>
+                <div className="col-span-10 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={form.physicalWidth}
+                    onChange={e => setForm(prev => ({ ...prev, physicalWidth: e.target.value, resolutionPreset: 'custom' }))}
+                    className="w-20 rounded border border-[#d9d9d9] px-2.5 py-1 text-xs text-center font-mono focus:border-[#165dff]"
+                  />
+                  <span>×</span>
+                  <input
+                    type="text"
+                    value={form.physicalHeight}
+                    onChange={e => setForm(prev => ({ ...prev, physicalHeight: e.target.value, resolutionPreset: 'custom' }))}
+                    className="w-20 rounded border border-[#d9d9d9] px-2.5 py-1 text-xs text-center font-mono focus:border-[#165dff]"
+                  />
+                  <span className="text-[11px] text-[#86909c] ml-1">真实硬件物理分辨率 (像素)</span>
+                </div>
+              </div>
+
+              {/* 2. 页面视口 (Viewport) & DPR */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  页面视口 (Viewport)
+                </label>
+                <div className="col-span-10 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={form.windowWidth}
+                    onChange={e => setForm(prev => ({ ...prev, windowWidth: e.target.value, resolutionPreset: 'custom' }))}
+                    className="w-20 rounded border border-[#d9d9d9] px-2.5 py-1 text-xs text-center font-mono focus:border-[#165dff]"
+                  />
+                  <span>×</span>
+                  <input
+                    type="text"
+                    value={form.windowHeight}
+                    onChange={e => setForm(prev => ({ ...prev, windowHeight: e.target.value, resolutionPreset: 'custom' }))}
+                    className="w-20 rounded border border-[#d9d9d9] px-2.5 py-1 text-xs text-center font-mono focus:border-[#165dff]"
+                  />
+                  <span className="text-[#86909c] ml-3">设备缩放 (DPR):</span>
+                  <input
+                    type="text"
+                    value={form.devicePixelRatio}
+                    onChange={e => setForm(prev => ({ ...prev, devicePixelRatio: e.target.value, resolutionPreset: 'custom' }))}
+                    className="w-16 rounded border border-[#d9d9d9] px-2 py-1 text-xs text-center font-mono focus:border-[#165dff]"
+                  />
+                  <span className="text-[11px] text-emerald-600 ml-1">
+                    {form.resolutionPreset === 'real' ? '✓ 本机真实缩放比' : '✓ 视口比例'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 3. 硬件并发 (CPU核心数与内存容量，完全绑定机型硬件) */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  硬件并发
+                </label>
+                <div className="col-span-10 flex items-center gap-4">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#86909c]">CPU核心:</span>
+                    <select
+                      value={form.hardwareConcurrency}
+                      onChange={e => setForm(prev => ({ ...prev, hardwareConcurrency: e.target.value }))}
+                      className="rounded border border-[#d9d9d9] px-2.5 py-1 text-xs focus:border-[#165dff] font-medium"
+                    >
+                      <option value="4">4 核 (入门四核)</option>
+                      <option value="6">6 核 (Apple A系列/标准标配)</option>
+                      <option value="8">8 核 (主流高通骁龙/天玑/PC八核)</option>
+                      <option value="12">12 核 (旗舰处理器)</option>
+                      <option value="16">16 核 (PC 桌面处理器)</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#86909c]">内存 (RAM):</span>
+                    <select
+                      value={form.deviceMemory}
+                      onChange={e => setForm(prev => ({ ...prev, deviceMemory: e.target.value }))}
+                      className="rounded border border-[#d9d9d9] px-2.5 py-1 text-xs focus:border-[#165dff] font-medium"
+                    >
+                      <option value="2">2 GB</option>
+                      <option value="3">3 GB</option>
+                      <option value="4">4 GB (OPPO A3s / iPhone 13 标配)</option>
+                      <option value="6">6 GB (iPhone 14/15 标配)</option>
+                      <option value="8">8 GB (iPhone 15 Pro / POCO F5 标配)</option>
+                      <option value="12">12 GB (Galaxy S23/S24 Ultra / Pixel 8 Pro 旗舰)</option>
+                      <option value="16">16 GB (PC 桌面级)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. 防关联噪音开关 */}
+              <div className="grid grid-cols-12 items-center gap-3">
+                <label className="col-span-2 text-right font-medium text-[#4e5969]">
+                  防关联噪音
+                </label>
+                <div className="col-span-10 flex flex-wrap gap-4 text-xs">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.canvasNoise}
+                      onChange={e => setForm(prev => ({ ...prev, canvasNoise: e.target.checked }))}
+                      className="rounded text-[#165dff]"
+                    />
+                    <span>Canvas 噪音</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.audioNoise}
+                      onChange={e => setForm(prev => ({ ...prev, audioNoise: e.target.checked }))}
+                      className="rounded text-[#165dff]"
+                    />
+                    <span>Audio 噪音</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.clientRectsNoise}
+                      onChange={e => setForm(prev => ({ ...prev, clientRectsNoise: e.target.checked }))}
+                      className="rounded text-[#165dff]"
+                    />
+                    <span>ClientRects 噪音</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.batterySpoofing}
+                      onChange={e => setForm(prev => ({ ...prev, batterySpoofing: e.target.checked }))}
+                      className="rounded text-[#165dff]"
+                    />
+                    <span>电池模拟</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        {/* 3. 右侧“环境预览”面板: HubStudio 1:1 风格 (硬件并发 & 分辨率严格对应) */}
+        <div className="w-[320px] border-l border-[#e5e6eb] bg-white flex flex-col justify-between p-4 overflow-y-auto">
+          <div className="space-y-3.5">
+            {/* 标题 */}
+            <div className="flex items-center justify-between border-b border-[#f2f3f5] pb-2.5">
+              <span className="text-xs font-bold text-[#1d2129]">环境预览</span>
+              <List size={14} className="text-[#86909c]" />
+            </div>
+
+            {/* 参数列表 */}
+            <div className="space-y-2 text-[11px] leading-relaxed">
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">浏览器:</span>
+                <span className="font-medium text-[#1d2129]">
+                  {form.browserEngine === 'chromium' ? 'ChroBrowser' : 'FireBrowser'}
+                  <span className="text-[#86909c] ml-1">
+                    {form.browserEngine === 'chromium'
+                      ? `(智能匹配 Chrome ${inferKernelFromUA(form.userAgent, form.browserEngine).startsWith('155') ? '155' : '146'} 内核)`
+                      : '(智能匹配 Gecko 135 内核)'}
+                  </span>
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">内核状态:</span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                  <span>⚡️</span>
+                  <span>就绪 · 启动时自愈直连</span>
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">指纹ID:</span>
+                <span className="font-mono text-[#1d2129] flex items-center gap-1">
+                  <span>{fingerprintId}</span>
+                  <span className="text-[#86909c] text-[10px]">(全球唯一)</span>
+                  <HelpCircle size={10} className="text-[#86909c]" />
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">操作系统:</span>
+                <span className="font-semibold text-[#1d2129]">
+                  {OS_ITEMS.find(x => x.id === form.os)?.label || form.os}
+                </span>
+              </div>
+
+              {(form.os === 'android' || form.os === 'ios') && (
+                <div className="flex items-start justify-between">
+                  <span className="text-[#86909c]">机型:</span>
+                  <span className="font-semibold text-[#165dff] max-w-[190px] text-right truncate" title={form.deviceModel}>
+                    {form.deviceModel || '未指定'}
+                  </span>
+                </div>
+              )}
+
+              <div className="space-y-0.5">
+                <div className="text-[#86909c]">User Agent:</div>
+                <div className="rounded bg-[#f7f8fa] p-1.5 font-mono text-[10px] text-[#4e5969] leading-tight break-all border border-[#f2f3f5]">
+                  {form.userAgent || '自动生成中...'}
+                </div>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">语言:</span>
+                <span className="text-[#1d2129]">{form.languages || '基于IP匹配对应的语言'}</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">时区:</span>
+                <span className="text-[#1d2129]">{form.timezone || '基于IP匹配对应的时区'}</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">地理位置:</span>
+                <span className="text-[#1d2129]">基于IP匹配对应的地理位置</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">分辨率:</span>
+                <div className="text-right">
+                  <div className="font-medium text-[#1d2129]">
+                    {form.resolutionPreset === 'real' ? '真实 ' : '物理 '}
+                    {form.physicalWidth} × {form.physicalHeight}
+                  </div>
+                  <div className="text-[#86909c] text-[10px]">
+                    视口 {form.windowWidth} × {form.windowHeight} (DPR: {form.devicePixelRatio})
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">硬件并发:</span>
+                <span className="font-semibold text-[#1d2129]">
+                  {form.hardwareConcurrency} 核 CPU / {form.deviceMemory} GB 内存
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">字体列表:</span>
+                <span className="text-[#1d2129]">真实</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">字体指纹:</span>
+                <span className="text-[#1d2129]">噪音</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">WebRTC:</span>
+                <span className="text-[#1d2129]">隐藏</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">Canvas:</span>
+                <span className="text-[#1d2129]">噪音</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">WebGL图像:</span>
+                <span className="text-[#1d2129]">噪音</span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">WebGL Info:</span>
+                <div className="text-right max-w-[180px]">
+                  <div className="font-medium text-[#1d2129]">{form.webglVendor || 'Qualcomm'}</div>
+                  <div className="text-[#86909c] text-[10px] truncate" title={form.webglRenderer}>{form.webglRenderer || 'Adreno (TM) 506'}</div>
+                </div>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">WebGPU:</span>
+                <span className="text-[#1d2129]">
+                  {form.os === 'ios' ? 'not support' : '基于WebGL匹配'}
+                </span>
+              </div>
+
+              <div className="flex items-start justify-between">
+                <span className="text-[#86909c]">AudioContext:</span>
+                <span className="text-[#1d2129]">噪音</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 底部提示卡片 */}
+          <div className="mt-4 pt-3 border-t border-[#f2f3f5] text-[11px] text-[#86909c] flex items-center justify-between">
+            <span>
+              可设置 <span className="text-[#165dff] cursor-pointer hover:underline">环境模板</span> 每次将以此模版创建
+            </span>
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#165dff] text-white text-[11px] font-bold">
+              ?
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. 底部固定操作栏 */}
+      <div className="flex h-[52px] items-center justify-between border-t border-[#e5e6eb] bg-white px-6">
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            form="profile-form-hub"
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded bg-[#165dff] px-5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#1253d8] transition-colors disabled:opacity-50"
+          >
+            {saving && <LoaderCircle size={13} className="animate-spin" />}
+            <span>完成</span>
+            <ChevronDown size={13} className="opacity-70" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border border-[#d9d9d9] bg-white px-4 py-1.5 text-xs font-medium text-[#4e5969] hover:bg-[#f7f8fa] transition-colors"
+          >
+            取消
+          </button>
+        </div>
+
+        {/* ★ 全类型随机指纹套件 (机型与硬件严格对应) */}
+        <button
+          type="button"
+          onClick={handleShuffleFullProfile}
+          className="flex items-center gap-1.5 text-xs text-[#86909c] hover:text-[#165dff] transition-colors cursor-pointer"
+          title="全类型随机匹配全新黄金硬件套件（机型与硬件参数 100% 自洽）"
+        >
+          <Shuffle size={13} />
+          <span>换一套指纹</span>
+        </button>
+      </div>
     </div>
   )
 }

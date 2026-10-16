@@ -82,10 +82,18 @@ async def validate_session(storage, token: str) -> str | None:
     session = await storage.get_session(hash_token(token))
     if session is None:
         return None
-    if datetime.fromisoformat(session["expires_at"]) <= datetime.now():
-        await storage.delete_session(session["token_hash"])
-        return None
-    return session["username"]
+    exp = session.get("expires_at")
+    if isinstance(exp, str):
+        try:
+            exp = datetime.fromisoformat(exp)
+        except Exception:
+            return None
+    if isinstance(exp, datetime):
+        now = datetime.now(timezone.utc) if exp.tzinfo is not None else datetime.now()
+        if exp <= now:
+            await storage.delete_session(session["token_hash"])
+            return None
+    return session.get("username")
 
 
 def extract_session_token(request) -> str | None:

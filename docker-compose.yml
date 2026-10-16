@@ -22,6 +22,7 @@ services:
       R2_BUCKET: "tikmatrix"
     volumes:
       - cpm-data:/data
+      - ./src:/app/src
     depends_on:
       postgres:
         condition: service_healthy

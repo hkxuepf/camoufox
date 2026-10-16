@@ -20,6 +20,8 @@ from .models import (
     Profile,
     ProfileStatus,
     ProxyConfig,
+    Schedule,
+    ScheduleRun,
 )
 
 
@@ -191,6 +193,30 @@ class PostgresDatabaseManager:
                     sha256_win_x64 TEXT,
                     size_bytes BIGINT DEFAULT 0,
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS schedules (
+                    id TEXT PRIMARY KEY,
+                    profile_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    interval_minutes INT,
+                    at_time TEXT,
+                    days TEXT,
+                    run_minutes INT,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    next_run_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS schedule_runs (
+                    id SERIAL PRIMARY KEY,
+                    schedule_id TEXT NOT NULL,
+                    started_at TIMESTAMPTZ NOT NULL,
+                    finished_at TIMESTAMPTZ,
+                    outcome TEXT NOT NULL,
+                    message TEXT
                 );
             """)
 
@@ -414,6 +440,148 @@ class PostgresDatabaseManager:
                        SET sync_status = $1, last_synced_at = CURRENT_TIMESTAMP
                      WHERE id = $2
                 """, status, profile_id)
+
+    # --- Schedule Methods ---
+
+    async def save_schedule(self, schedule: Schedule) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO schedules (
+                    id, profile_id, action, kind, interval_minutes, at_time, days,
+                    run_minutes, enabled, next_run_at, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                ON CONFLICT (id) DO UPDATE SET
+                    profile_id = EXCLUDED.profile_id,
+                    action = EXCLUDED.action,
+                    kind = EXCLUDED.kind,
+                    interval_minutes = EXCLUDED.interval_minutes,
+                    at_time = EXCLUDED.at_time,
+                    days = EXCLUDED.days,
+                    run_minutes = EXCLUDED.run_minutes,
+                    enabled = EXCLUDED.enabled,
+                    next_run_at = EXCLUDED.next_run_at,
+                    updated_at = EXCLUDED.updated_at
+                """,
+                schedule.id,
+                schedule.profile_id,
+                schedule.action,
+                schedule.kind,
+                schedule.interval_minutes,
+                schedule.at_time,
+                json.dumps(schedule.days) if schedule.days else None,
+                schedule.run_minutes,
+                schedule.enabled,
+                schedule.next_run_at,
+                schedule.created_at,
+                schedule.updated_at,
+            )
+
+    async def get_schedule(self, schedule_id: str) -> Schedule | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM schedules WHERE id = $1", schedule_id)
+            return self._row_to_schedule(row) if row else None
+
+    async def list_schedules(self, profile_id: str | None = None) -> list[Schedule]:
+        async with self._pool.acquire() as conn:
+            if profile_id:
+                rows = await conn.fetch("SELECT * FROM schedules WHERE profile_id = $1 ORDER BY created_at", profile_id)
+            else:
+                rows = await conn.fetch("SELECT * FROM schedules ORDER BY created_at")
+            return [self._row_to_schedule(row) for row in rows]
+
+    async def delete_schedule(self, schedule_id: str) -> bool:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("DELETE FROM schedule_runs WHERE schedule_id = $1", schedule_id)
+                res = await conn.execute("DELETE FROM schedules WHERE id = $1", schedule_id)
+                return "DELETE 1" in res
+
+    async def log_schedule_run(self, run: ScheduleRun, keep: int = 20) -> ScheduleRun:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO schedule_runs (schedule_id, started_at, finished_at, outcome, message)
+                    VALUES ($1, $2, $3, $4, $5)
+                    RETURNING id
+                    """,
+                    run.schedule_id,
+                    run.started_at,
+                    run.finished_at,
+                    run.outcome,
+                    run.message,
+                )
+                if row:
+                    run.id = row["id"]
+                await conn.execute(
+                    """
+                    DELETE FROM schedule_runs WHERE schedule_id = $1 AND id NOT IN (
+                        SELECT id FROM schedule_runs WHERE schedule_id = $1 ORDER BY id DESC LIMIT $2
+                    )
+                    """,
+                    run.schedule_id,
+                    keep,
+                )
+                return run
+
+    async def list_schedule_runs(self, schedule_id: str, limit: int = 20) -> list[ScheduleRun]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM schedule_runs WHERE schedule_id = $1 ORDER BY id DESC LIMIT $2",
+                schedule_id,
+                limit,
+            )
+            return [self._row_to_schedule_run(row) for row in rows]
+
+    def _row_to_schedule(self, row) -> Schedule:
+        days = row["days"]
+        if isinstance(days, str):
+            try:
+                days = json.loads(days)
+            except Exception:
+                days = None
+        next_run = row["next_run_at"]
+        if isinstance(next_run, str):
+            next_run = datetime.fromisoformat(next_run)
+        created = row["created_at"]
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        updated = row["updated_at"]
+        if isinstance(updated, str):
+            updated = datetime.fromisoformat(updated)
+
+        return Schedule(
+            id=row["id"],
+            profile_id=row["profile_id"],
+            action=row["action"],
+            kind=row["kind"],
+            interval_minutes=row["interval_minutes"],
+            at_time=row["at_time"],
+            days=days,
+            run_minutes=row["run_minutes"],
+            enabled=bool(row["enabled"]),
+            next_run_at=next_run,
+            created_at=created,
+            updated_at=updated,
+        )
+
+    def _row_to_schedule_run(self, row) -> ScheduleRun:
+        started = row["started_at"]
+        if isinstance(started, str):
+            started = datetime.fromisoformat(started)
+        finished = row["finished_at"]
+        if isinstance(finished, str):
+            finished = datetime.fromisoformat(finished)
+
+        return ScheduleRun(
+            id=row["id"],
+            schedule_id=row["schedule_id"],
+            started_at=started,
+            finished_at=finished,
+            outcome=row["outcome"],
+            message=row["message"],
+        )
 
     # --- Helper Serializers ---
 

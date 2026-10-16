@@ -1857,6 +1857,7 @@ class StorageManager:
     def __init__(self, db_path: str = "data/profiles.db"):
         import os
         self.db_path = db_path
+        self.local_db = DatabaseManager(db_path)
         database_url = os.environ.get("DATABASE_URL") or os.environ.get("CPM_DATABASE_URL")
         target = database_url or db_path
         if target.startswith("postgresql://") or target.startswith("postgres://"):
@@ -1864,22 +1865,32 @@ class StorageManager:
             self.db = PostgresDatabaseManager(target)
             logger.info("StorageManager initialized with Enterprise PostgreSQL backend")
         else:
-            self.db = DatabaseManager(db_path)
+            self.db = self.local_db
             logger.info(f"StorageManager initialized with SQLite database: {db_path}")
 
     async def initialize(self):
         """Initialize the database with graceful SQLite fallback."""
-        try:
-            await self.db.initialize()
-        except Exception as exc:
-            if not isinstance(self.db, DatabaseManager):
+        await self.local_db.initialize()
+        if self.db is not self.local_db:
+            try:
+                await self.db.initialize()
+            except Exception as exc:
                 logger.warning(
                     f"PostgreSQL initialization failed ({exc}). Falling back to local SQLite WAL engine."
                 )
-                self.db = DatabaseManager(self.db_path)
-                await self.db.initialize()
-            else:
-                raise
+                self.db = self.local_db
+
+    def _get_handler(self, name: str):
+        if hasattr(self.db, name):
+            return getattr(self.db, name)
+        return getattr(self.local_db, name)
+
+    def __getattr__(self, name: str):
+        if hasattr(self.db, name):
+            return getattr(self.db, name)
+        if hasattr(self.local_db, name):
+            return getattr(self.local_db, name)
+        raise AttributeError(f"'StorageManager' object has no attribute '{name}'")
 
 
 
@@ -1958,18 +1969,18 @@ class StorageManager:
         )
 
     async def get_user_by_username(self, username: str) -> dict | None:
-        return await self.db.get_user_by_username(username)
+        return await self._get_handler("get_user_by_username")(username)
 
     async def get_user_by_id(self, user_id: str) -> dict | None:
-        return await self.db.get_user_by_id(user_id)
+        return await self._get_handler("get_user_by_id")(user_id)
 
     async def update_user_password(self, username: str, password_hash: str) -> bool:
-        return await self.db.update_user_password(username, password_hash)
+        return await self._get_handler("update_user_password")(username, password_hash)
 
     async def update_user_api_credentials(
         self, username: str, api_status: str, app_id: str, app_secret: str
     ) -> bool:
-        return await self.db.update_user_api_credentials(username, api_status, app_id, app_secret)
+        return await self._get_handler("update_user_api_credentials")(username, api_status, app_id, app_secret)
 
     async def update_user_admin(
         self,
@@ -1981,87 +1992,87 @@ class StorageManager:
         expires_at: str | None = None,
         status: str | None = None,
     ) -> bool:
-        return await self.db.update_user_admin(
+        return await self._get_handler("update_user_admin")(
             username, role, plan_id, max_profiles, max_concurrent, expires_at, status
         )
 
     async def delete_user(self, username: str) -> bool:
-        return await self.db.delete_user(username)
+        return await self._get_handler("delete_user")(username)
 
     async def count_users(self) -> int:
-        return await self.db.count_users()
+        return await self._get_handler("count_users")()
 
     async def list_users(self) -> list[dict]:
-        return await self.db.list_users()
+        return await self._get_handler("list_users")()
 
     async def create_session(self, token_hash: str, user_id: str, expires_at: datetime) -> None:
-        await self.db.create_session(token_hash, user_id, expires_at)
+        await self._get_handler("create_session")(token_hash, user_id, expires_at)
 
     async def get_session(self, token_hash: str) -> dict | None:
-        return await self.db.get_session(token_hash)
+        return await self._get_handler("get_session")(token_hash)
 
     async def delete_session(self, token_hash: str) -> bool:
-        return await self.db.delete_session(token_hash)
+        return await self._get_handler("delete_session")(token_hash)
 
     async def delete_expired_sessions(self) -> int:
-        return await self.db.delete_expired_sessions()
+        return await self._get_handler("delete_expired_sessions")()
 
     # Plan methods
     async def list_plans(self) -> list[dict]:
-        return await self.db.list_plans()
+        return await self._get_handler("list_plans")()
 
     async def get_plan(self, plan_id: str) -> dict | None:
-        return await self.db.get_plan(plan_id)
+        return await self._get_handler("get_plan")(plan_id)
 
     async def save_plan(self, plan: dict) -> None:
-        await self.db.save_plan(plan)
+        await self._get_handler("save_plan")(plan)
 
     async def delete_plan(self, plan_id: str) -> bool:
-        return await self.db.delete_plan(plan_id)
+        return await self._get_handler("delete_plan")(plan_id)
 
     # Order methods
     async def create_order(self, order: dict) -> dict:
-        return await self.db.create_order(order)
+        return await self._get_handler("create_order")(order)
 
     async def get_order(self, order_no: str) -> dict | None:
-        return await self.db.get_order(order_no)
+        return await self._get_handler("get_order")(order_no)
 
     async def list_orders(self, user_id: str | None = None, limit: int = 100) -> list[dict]:
-        return await self.db.list_orders(user_id, limit)
+        return await self._get_handler("list_orders")(user_id, limit)
 
     async def update_order_status(
         self, order_no: str, status: str, tx_hash: str | None = None
     ) -> bool:
-        return await self.db.update_order_status(order_no, status, tx_hash)
+        return await self._get_handler("update_order_status")(order_no, status, tx_hash)
 
     # Admin Settings & Dashboard
     async def get_admin_settings(self) -> dict[str, str]:
-        return await self.db.get_admin_settings()
+        return await self._get_handler("get_admin_settings")()
 
     async def update_admin_setting(self, key: str, value: str) -> None:
-        await self.db.update_admin_setting(key, value)
+        await self._get_handler("update_admin_setting")(key, value)
 
     async def get_admin_dashboard_stats(self) -> dict:
-        return await self.db.get_admin_dashboard_stats()
+        return await self._get_handler("get_admin_dashboard_stats")()
 
     # Schedule methods
     async def save_schedule(self, schedule: Schedule):
-        await self.db.save_schedule(schedule)
+        await self._get_handler("save_schedule")(schedule)
 
     async def get_schedule(self, schedule_id: str) -> Schedule | None:
-        return await self.db.get_schedule(schedule_id)
+        return await self._get_handler("get_schedule")(schedule_id)
 
     async def list_schedules(self, profile_id: str | None = None) -> list[Schedule]:
-        return await self.db.list_schedules(profile_id)
+        return await self._get_handler("list_schedules")(profile_id)
 
     async def delete_schedule(self, schedule_id: str) -> bool:
-        return await self.db.delete_schedule(schedule_id)
+        return await self._get_handler("delete_schedule")(schedule_id)
 
     async def log_schedule_run(self, run: ScheduleRun) -> ScheduleRun:
-        return await self.db.log_schedule_run(run)
+        return await self._get_handler("log_schedule_run")(run)
 
     async def list_schedule_runs(self, schedule_id: str, limit: int = 20) -> list[ScheduleRun]:
-        return await self.db.list_schedule_runs(schedule_id, limit)
+        return await self._get_handler("list_schedule_runs")(schedule_id, limit)
 
     # Lease methods
     async def acquire_lease(

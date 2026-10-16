@@ -462,6 +462,18 @@ class DatabaseManager:
                 'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-win-x64.zip'
             ),
             (
+                'kr_fox_134', 'camoufox', '134.0.2', 'Camoufox 134 (Gecko 稳定过渡版)',
+                'Firefox 134 ESR 过渡版本，集成全套 WebGL 噪声与字体度量仿真', 0, 1,
+                'https://github.com/daijro/camoufox/releases/download/v134.0.2-beta.20/camoufox-134.0.2-beta.20-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v134.0.2-beta.20/camoufox-134.0.2-beta.20-win.x86_64.zip'
+            ),
+            (
+                'kr_fox_133', 'camoufox', '133.0', 'Camoufox 133 (Gecko 经典历史版)',
+                'Firefox 133 特征版本，支持原生 Canvas/Audio 扰动防追踪', 0, 1,
+                'https://github.com/daijro/camoufox/releases/download/v133.0-beta.19/camoufox-133.0-beta.19-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v133.0-beta.19/camoufox-133.0-beta.19-win.x86_64.zip'
+            ),
+            (
                 'kr_fox_132', 'camoufox', '132.0.2', 'Camoufox 132 (Gecko 经典历史版)',
                 '经典历史版本，提供低版本 Firefox 特征库，彻底杜绝 UA 伪造穿帮风险', 0, 1,
                 'https://github.com/daijro/camoufox/releases/download/v132.0.2-beta.17/camoufox-132.0.2-beta.17-mac.arm64.zip',

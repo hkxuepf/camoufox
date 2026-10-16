@@ -5,16 +5,16 @@
 services:
   app:
     build: .
-    container_name: camouhub-server
+    container_name: camoufox-app
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       CPM_SECRET_KEY: "LdNkRX1Ne11-gJvBM2GaeyOIXQVpUbALsAUA78EQWo8="
       CPM_SECURE_COOKIES: "1"
       CPM_HOST: "0.0.0.0"
       CPM_PORT: "8000"
-      # Enterprise database & Redis URL (uncomment to activate high-concurrency mode)
+      # Enterprise database & Redis URL (high-concurrency dual engine)
       DATABASE_URL: "postgresql://cpm_user:cpm_pass@postgres:5432/camouhub"
       REDIS_URL: "redis://redis:6379/0"
       CPM_DB_PATH: "/data/profiles.db"
@@ -30,11 +30,15 @@ services:
       redis:
         condition: service_started
     networks:
-      - camouhub-net
+      camoufox-net:
+        aliases:
+          - camoufox-app
+          - camouhub-server
+          - app
 
   postgres:
     image: postgres:15-alpine
-    container_name: camouhub-postgres
+    container_name: camoufox-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: camouhub
@@ -48,26 +52,30 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - camouhub-net
+      camoufox-net:
+        aliases:
+          - postgres
 
   redis:
     image: redis:7-alpine
-    container_name: camouhub-redis
+    container_name: camoufox-redis
     restart: unless-stopped
     volumes:
       - redis-data:/data
     networks:
-      - camouhub-net
+      camoufox-net:
+        aliases:
+          - redis
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    container_name: camouhub-tunnel
+    container_name: camoufox-tunnel
     restart: unless-stopped
     command: tunnel --no-autoupdate run --token eyJhIjoiYTQxNmE1OGY2YjFkNjlhODdkNTJiZjBjNzBjMjcxNjMiLCJ0IjoiOWI0MzFmOGUtYjA3NC00MjE5LTgzZjQtMzVkMGNjZjRiNDE4IiwicyI6Ik9XWm1Zek16TmpNdE1USmtOaTAwWWpJekxUa3haREF0T1ROaVlXSTNZVFUzWWpjeSJ9
     depends_on:
       - app
     networks:
-      - camouhub-net
+      - camoufox-net
 
 volumes:
   cpm-data:
@@ -75,4 +83,7 @@ volumes:
   redis-data:
 
 networks:
-  camouhub-net:
+  camoufox-net:
+    name: camoufox_camoufox-net
+    external: true
+

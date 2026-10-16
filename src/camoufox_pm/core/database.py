@@ -1927,30 +1927,30 @@ class StorageManager:
     async def list_profiles(
         self, filters: dict | None = None, limit: int | None = None, offset: int = 0
     ) -> list[Profile]:
-        return await self.db.list_profiles(filters, limit, offset)
+        return await self._get_handler("list_profiles")(filters, limit, offset)
 
     async def set_profile_trashed(self, profile_id: str, trashed: bool) -> bool:
-        return await self.db.set_profile_trashed(profile_id, trashed)
+        return await self._get_handler("set_profile_trashed")(profile_id, trashed)
 
     async def count_profiles(self, filters: dict | None = None) -> int:
-        return await self.db.count_profiles(filters)
+        return await self._get_handler("count_profiles")(filters)
 
     # Group methods
     async def save_profile_group(self, group: ProfileGroup):
-        await self.db.save_profile_group(group)
+        await self._get_handler("save_profile_group")(group)
 
     async def list_profile_groups(self) -> list[ProfileGroup]:
-        return await self.db.list_profile_groups()
+        return await self._get_handler("list_profile_groups")()
 
     # Statistics methods
     async def log_usage(self, usage_stats: UsageStats):
-        await self.db.log_usage(usage_stats)
+        await self._get_handler("log_usage")(usage_stats)
 
     async def get_profile_usage_stats(self, profile_id: str) -> list[UsageStats]:
-        return await self.db.get_profile_usage_stats(profile_id)
+        return await self._get_handler("get_profile_usage_stats")(profile_id)
 
     async def delete_profile_group(self, group_id: str) -> bool:
-        return await self.db.delete_profile_group(group_id)
+        return await self._get_handler("delete_profile_group")(group_id)
 
     # User and session methods
     async def create_user(
@@ -1964,7 +1964,7 @@ class StorageManager:
         max_concurrent: int = 2,
         expires_at: str | None = None,
     ) -> None:
-        await self.db.create_user(
+        await self._get_handler("create_user")(
             user_id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at
         )
 

@@ -18,6 +18,7 @@ except ImportError:
 
 from .models import (
     Profile,
+    ProfileGroup,
     ProfileStatus,
     ProxyConfig,
     Schedule,
@@ -135,11 +136,24 @@ class PostgresDatabaseManager:
                     last_login TIMESTAMPTZ
                 );
 
+                CREATE TABLE IF NOT EXISTS sessions (
+                    token_hash TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMPTZ NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS admin_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS plans (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     max_profiles INT NOT NULL,
                     max_concurrent INT NOT NULL,
+                    duration_days INT DEFAULT 30,
                     price_usdt REAL NOT NULL,
                     description TEXT,
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
@@ -293,39 +307,164 @@ class PostgresDatabaseManager:
 
     async def list_profiles(
         self,
-        group_id: str | None = None,
-        status: ProfileStatus | None = None,
-        include_deleted: bool = False,
-        user_id: str | None = None,
-        skip: int = 0,
-        limit: int = 100,
+        filters: dict | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+        **kwargs,
     ) -> list[Profile]:
+        f = dict(filters) if isinstance(filters, dict) else {}
+        for k, v in kwargs.items():
+            if v is not None:
+                f[k] = v
+
         conditions = []
         params = []
         idx = 1
 
-        if not include_deleted:
+        include_deleted = f.get("include_deleted", False)
+        trashed = f.get("trashed", False)
+
+        if trashed:
+            conditions.append("deleted_at IS NOT NULL")
+        elif not include_deleted:
             conditions.append("deleted_at IS NULL")
-        if group_id:
-            conditions.append(f"group_id = ${idx}")
-            params.append(group_id)
-            idx += 1
-        if status:
-            conditions.append(f"status = ${idx}")
-            params.append(status.value)
-            idx += 1
+
+        user_id = f.get("user_id")
         if user_id:
             conditions.append(f"user_id = ${idx}")
             params.append(user_id)
             idx += 1
 
+        group_id = f.get("group") or f.get("group_id")
+        if group_id:
+            conditions.append(f"group_id = ${idx}")
+            params.append(group_id)
+            idx += 1
+
+        status = f.get("status")
+        if status:
+            status_val = status.value if hasattr(status, "value") else str(status)
+            conditions.append(f"status = ${idx}")
+            params.append(status_val)
+            idx += 1
+
+        name_like = f.get("name_like")
+        if name_like:
+            conditions.append(f"name ILIKE ${idx}")
+            params.append(f"%{name_like}%")
+            idx += 1
+
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-        query = f"SELECT * FROM profiles {where} ORDER BY updated_at DESC OFFSET ${idx} LIMIT ${idx + 1}"
-        params.extend([skip, limit])
+        query = f"SELECT * FROM profiles {where} ORDER BY created_at DESC"
+
+        eff_limit = limit if (limit is not None and limit > 0) else (f.get("limit") or 100)
+        eff_offset = offset if offset else (f.get("offset") or f.get("skip") or 0)
+
+        query += f" OFFSET ${idx} LIMIT ${idx + 1}"
+        params.extend([eff_offset, eff_limit])
 
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
             return [self._row_to_profile(dict(r)) for r in rows]
+
+    async def count_profiles(self, filters: dict | None = None) -> int:
+        conditions = []
+        params = []
+        idx = 1
+
+        include_deleted = False
+        trashed = False
+        if filters:
+            include_deleted = filters.get("include_deleted", False)
+            trashed = filters.get("trashed", False)
+
+        if trashed:
+            conditions.append("deleted_at IS NOT NULL")
+        elif not include_deleted:
+            conditions.append("deleted_at IS NULL")
+
+        if filters:
+            if filters.get("user_id"):
+                conditions.append(f"user_id = ${idx}")
+                params.append(filters["user_id"])
+                idx += 1
+            group_id = filters.get("group") or filters.get("group_id")
+            if group_id:
+                conditions.append(f"group_id = ${idx}")
+                params.append(group_id)
+                idx += 1
+            if filters.get("status"):
+                status_val = filters["status"].value if hasattr(filters["status"], "value") else str(filters["status"])
+                conditions.append(f"status = ${idx}")
+                params.append(status_val)
+                idx += 1
+            if filters.get("name_like"):
+                conditions.append(f"name ILIKE ${idx}")
+                params.append(f"%{filters['name_like']}%")
+                idx += 1
+
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        query = f"SELECT COUNT(*) FROM profiles {where}"
+        async with self._pool.acquire() as conn:
+            val = await conn.fetchval(query, *params)
+            return val or 0
+
+    async def set_profile_trashed(self, profile_id: str, trashed: bool) -> bool:
+        async with self._pool.acquire() as conn:
+            if trashed:
+                res = await conn.execute(
+                    "UPDATE profiles SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL",
+                    profile_id,
+                )
+            else:
+                res = await conn.execute(
+                    "UPDATE profiles SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL",
+                    profile_id,
+                )
+            return "UPDATE 1" in res
+
+    # --- Profile Groups ---
+
+    async def save_profile_group(self, group: ProfileGroup) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO profile_groups (id, name, color, description, user_id, updated_at)
+                VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    color = EXCLUDED.color,
+                    description = EXCLUDED.description,
+                    user_id = EXCLUDED.user_id,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                group.id,
+                group.name,
+                group.color,
+                group.description,
+                group.user_id,
+            )
+
+    async def list_profile_groups(self) -> list[ProfileGroup]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM profile_groups ORDER BY created_at ASC")
+            return [
+                ProfileGroup(
+                    id=r["id"],
+                    name=r["name"],
+                    color=r["color"],
+                    description=r["description"],
+                    user_id=r["user_id"],
+                    created_at=r["created_at"],
+                    updated_at=r["updated_at"],
+                )
+                for r in rows
+            ]
+
+    async def delete_profile_group(self, group_id: str) -> bool:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute("DELETE FROM profile_groups WHERE id = $1", group_id)
+            return "DELETE 1" in res
 
     async def delete_profile(self, profile_id: str, permanent: bool = False) -> bool:
         async with self._pool.acquire() as conn:
@@ -664,3 +803,301 @@ class PostgresDatabaseManager:
             sync_size_kb=float(row["sync_size_kb"]) if row.get("sync_size_kb") is not None else None,
             cloud_sync_enabled=bool(row.get("cloud_sync_enabled", True)),
         )
+
+    # --- Users & Sessions ---
+
+    async def create_user(
+        self,
+        user_id: str,
+        username: str,
+        password_hash: str,
+        role: str = "user",
+        plan_id: str = "free",
+        max_profiles: int = 10,
+        max_concurrent: int = 2,
+        expires_at: str | None = None,
+    ) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO users (id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                """,
+                user_id,
+                username,
+                password_hash,
+                role,
+                plan_id,
+                max_profiles,
+                max_concurrent,
+                datetime.fromisoformat(expires_at) if expires_at else None,
+            )
+
+    async def get_user_by_username(self, username: str) -> dict | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at, status, created_at,
+                       api_status, api_app_id, api_app_secret
+                FROM users WHERE username = $1
+                """,
+                username,
+            )
+            return dict(row) if row else None
+
+    async def get_user_by_id(self, user_id: str) -> dict | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, username, password_hash, role, plan_id, max_profiles, max_concurrent, expires_at, status, created_at,
+                       api_status, api_app_id, api_app_secret
+                FROM users WHERE id = $1
+                """,
+                user_id,
+            )
+            return dict(row) if row else None
+
+    async def update_user_password(self, username: str, password_hash: str) -> bool:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute(
+                "UPDATE users SET password_hash = $1 WHERE username = $2", password_hash, username
+            )
+            return "UPDATE 1" in res
+
+    async def update_user_api_credentials(
+        self, username: str, api_status: str, app_id: str, app_secret: str
+    ) -> bool:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute(
+                "UPDATE users SET api_status = $1, api_app_id = $2, api_app_secret = $3 WHERE username = $4",
+                api_status, app_id, app_secret, username,
+            )
+            return "UPDATE 1" in res
+
+    async def update_user_admin(
+        self,
+        username: str,
+        role: str | None = None,
+        plan_id: str | None = None,
+        max_profiles: int | None = None,
+        max_concurrent: int | None = None,
+        expires_at: str | None = None,
+        status: str | None = None,
+    ) -> bool:
+        fields = []
+        params = []
+        idx = 1
+        if role is not None:
+            fields.append(f"role = ${idx}")
+            params.append(role)
+            idx += 1
+        if plan_id is not None:
+            fields.append(f"plan_id = ${idx}")
+            params.append(plan_id)
+            idx += 1
+        if max_profiles is not None:
+            fields.append(f"max_profiles = ${idx}")
+            params.append(max_profiles)
+            idx += 1
+        if max_concurrent is not None:
+            fields.append(f"max_concurrent = ${idx}")
+            params.append(max_concurrent)
+            idx += 1
+        if expires_at is not None:
+            fields.append(f"expires_at = ${idx}")
+            params.append(datetime.fromisoformat(expires_at) if expires_at else None)
+            idx += 1
+        if status is not None:
+            fields.append(f"status = ${idx}")
+            params.append(status)
+            idx += 1
+        if not fields:
+            return False
+        params.append(username)
+        query = f"UPDATE users SET {', '.join(fields)} WHERE username = ${idx}"
+        async with self._pool.acquire() as conn:
+            res = await conn.execute(query, *params)
+            return "UPDATE 1" in res
+
+    async def delete_user(self, username: str) -> bool:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute("DELETE FROM users WHERE username = $1", username)
+            return "DELETE 1" in res
+
+    async def count_users(self) -> int:
+        async with self._pool.acquire() as conn:
+            val = await conn.fetchval("SELECT COUNT(*) FROM users")
+            return val or 0
+
+    async def list_users(self) -> list[dict]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, username, role, plan_id, max_profiles, max_concurrent, expires_at, status, created_at, last_login,
+                       api_status, api_app_id
+                FROM users ORDER BY created_at DESC
+                """
+            )
+            return [dict(r) for r in rows]
+
+    async def create_session(self, token_hash: str, user_id: str, expires_at: datetime) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
+                VALUES ($1, $2, CURRENT_TIMESTAMP, $3)
+                ON CONFLICT (token_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at
+                """,
+                token_hash, user_id, expires_at,
+            )
+
+    async def get_session(self, token_hash: str) -> dict | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT s.token_hash, s.user_id, s.expires_at, u.username
+                FROM sessions s JOIN users u ON u.id = s.user_id
+                WHERE s.token_hash = $1
+                """,
+                token_hash,
+            )
+            return dict(row) if row else None
+
+    async def delete_session(self, token_hash: str) -> bool:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute("DELETE FROM sessions WHERE token_hash = $1", token_hash)
+            return "DELETE 1" in res
+
+    async def delete_expired_sessions(self) -> int:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute("DELETE FROM sessions WHERE expires_at <= CURRENT_TIMESTAMP")
+            parts = res.split()
+            return int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+
+    # --- Plans ---
+
+    async def list_plans(self) -> list[dict]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM plans ORDER BY price_usdt ASC")
+            return [dict(r) for r in rows]
+
+    async def get_plan(self, plan_id: str) -> dict | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM plans WHERE id = $1", plan_id)
+            return dict(row) if row else None
+
+    async def save_plan(self, plan: dict) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO plans (id, name, max_profiles, max_concurrent, duration_days, price_usdt, description)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    max_profiles = EXCLUDED.max_profiles,
+                    max_concurrent = EXCLUDED.max_concurrent,
+                    duration_days = EXCLUDED.duration_days,
+                    price_usdt = EXCLUDED.price_usdt,
+                    description = EXCLUDED.description
+                """,
+                plan["id"],
+                plan["name"],
+                plan["max_profiles"],
+                plan["max_concurrent"],
+                plan.get("duration_days", 30),
+                plan["price_usdt"],
+                plan.get("description", ""),
+            )
+
+    async def delete_plan(self, plan_id: str) -> bool:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute("DELETE FROM plans WHERE id = $1", plan_id)
+            return "DELETE 1" in res
+
+    # --- Orders ---
+
+    async def create_order(self, order: dict) -> dict:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO orders (id, order_no, user_id, username, plan_id, plan_name, amount_usdt, status, pay_network, pay_address, tx_hash, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+                """,
+                order["id"],
+                order["order_no"],
+                order["user_id"],
+                order["username"],
+                order["plan_id"],
+                order["plan_name"],
+                order["amount_usdt"],
+                order.get("status", "pending"),
+                order.get("pay_network", "TRC20"),
+                order.get("pay_address", ""),
+                order.get("tx_hash"),
+            )
+            return order
+
+    async def get_order(self, order_no: str) -> dict | None:
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM orders WHERE order_no = $1", order_no)
+            return dict(row) if row else None
+
+    async def list_orders(self, user_id: str | None = None, limit: int = 100) -> list[dict]:
+        async with self._pool.acquire() as conn:
+            if user_id:
+                rows = await conn.fetch("SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2", user_id, limit)
+            else:
+                rows = await conn.fetch("SELECT * FROM orders ORDER BY created_at DESC LIMIT $1", limit)
+            return [dict(r) for r in rows]
+
+    async def update_order_status(self, order_no: str, status: str, tx_hash: str | None = None) -> bool:
+        async with self._pool.acquire() as conn:
+            if tx_hash:
+                res = await conn.execute(
+                    "UPDATE orders SET status = $1, tx_hash = $2 WHERE order_no = $3",
+                    status, tx_hash, order_no,
+                )
+            else:
+                res = await conn.execute(
+                    "UPDATE orders SET status = $1 WHERE order_no = $2",
+                    status, order_no,
+                )
+            return "UPDATE 1" in res
+
+    # --- Admin Settings & Dashboard Stats ---
+
+    async def get_admin_settings(self) -> dict[str, str]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch("SELECT key, value FROM admin_settings")
+            return {r["key"]: r["value"] or "" for r in rows}
+
+    async def update_admin_setting(self, key: str, value: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO admin_settings (key, value)
+                VALUES ($1, $2)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """,
+                key, value,
+            )
+
+    async def get_admin_dashboard_stats(self) -> dict:
+        async with self._pool.acquire() as conn:
+            user_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+            profile_count = await conn.fetchval("SELECT COUNT(*) FROM profiles WHERE deleted_at IS NULL") or 0
+            active_running = await conn.fetchval(
+                "SELECT COUNT(*) FROM profiles WHERE locked_by IS NOT NULL AND lock_expires > CURRENT_TIMESTAMP"
+            ) or 0
+            total_orders = await conn.fetchval("SELECT COUNT(*) FROM orders") or 0
+            paid_orders = await conn.fetchval("SELECT COUNT(*) FROM orders WHERE status = 'paid'") or 0
+            total_revenue = await conn.fetchval("SELECT COALESCE(SUM(amount_usdt), 0) FROM orders WHERE status = 'paid'") or 0.0
+            return {
+                "user_count": user_count,
+                "profile_count": profile_count,
+                "active_running": active_running,
+                "total_orders": total_orders,
+                "paid_orders": paid_orders,
+                "total_revenue_usdt": round(float(total_revenue), 2),
+            }
+

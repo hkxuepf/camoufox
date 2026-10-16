@@ -7,8 +7,6 @@ services:
     build: .
     container_name: camoufox-app
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8000:8000"
     environment:
       CPM_SECRET_KEY: "LdNkRX1Ne11-gJvBM2GaeyOIXQVpUbALsAUA78EQWo8="
       CPM_SECURE_COOKIES: "1"

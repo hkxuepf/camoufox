@@ -33,6 +33,7 @@ import {
 
 import {
   adminAPI,
+  authAPI,
   type AdminStats,
   type AdminUser,
   type Order,
@@ -44,9 +45,14 @@ import { useI18n, LanguageToggle } from '@/lib/i18n'
 import { AdminReleasesView } from '@/components/admin-releases'
 
 export default function AdminConsolePage() {
-  const { role } = useAuth()
+  const { role, username, logout, refresh } = useAuth()
   const { t, language } = useI18n()
   const { activeTab, setActiveTab } = useAdminContext()
+
+  const [adminLoginUser, setAdminLoginUser] = useState('fgwl')
+  const [adminLoginPass, setAdminLoginPass] = useState('')
+  const [adminLoginError, setAdminLoginError] = useState<string | null>(null)
+  const [adminLoggingIn, setAdminLoggingIn] = useState(false)
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [users, setUsers] = useState<AdminUser[]>([])
   const [userRoleTab, setUserRoleTab] = useState<'client' | 'admin'>('client')
@@ -121,23 +127,101 @@ export default function AdminConsolePage() {
     loadData()
   }, [])
 
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAdminLoggingIn(true)
+    setAdminLoginError(null)
+    try {
+      const res = await authAPI.login(adminLoginUser.trim(), adminLoginPass)
+      if (res.role !== 'admin') {
+        setAdminLoginError(language === 'zh' ? '该账户不是超级管理员' : 'This account is not an administrator')
+        return
+      }
+      await refresh()
+      await loadData()
+    } catch (err) {
+      setAdminLoginError(String(err instanceof Error ? err.message : err))
+    } finally {
+      setAdminLoggingIn(false)
+    }
+  }
+
   if (role !== 'admin') {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-canvas p-6 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-danger/15 text-danger">
-          <Lock size={32} />
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#f8fafc] p-6 text-center select-none">
+        <div className="w-full max-w-[400px] rounded-2xl border border-[#e2e8f0] bg-white p-8 shadow-xl">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#eff6ff] text-[#1664ff]">
+            <Shield size={28} />
+          </div>
+          <h1 className="text-xl font-bold text-[#0f172a]">
+            {language === 'zh' ? 'CamouHub 超级管理后台' : 'CamouHub Admin Console'}
+          </h1>
+          <p className="mt-1 text-xs text-[#64748b]">
+            {language === 'zh'
+              ? (username ? `当前登录账户: ${username} (无管理权限)，请切换管理员登录` : '请输入系统管理员账号密码以进入后台')
+              : (username ? `Current user: ${username} (no admin rights)` : 'Please authenticate with admin credentials')}
+          </p>
+
+          <form onSubmit={handleAdminLogin} className="mt-6 flex flex-col gap-3.5 text-left">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-[#334155]">
+                {language === 'zh' ? '管理员账号' : 'Admin Username'}
+              </label>
+              <input
+                type="text"
+                required
+                value={adminLoginUser}
+                onChange={(e) => setAdminLoginUser(e.target.value)}
+                className="w-full rounded-lg border border-[#cbd5e1] px-3.5 py-2 text-sm text-[#0f172a] focus:border-[#1664ff] focus:outline-none"
+                placeholder="fgwl"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-[#334155]">
+                {language === 'zh' ? '管理员密码' : 'Password'}
+              </label>
+              <input
+                type="password"
+                required
+                value={adminLoginPass}
+                onChange={(e) => setAdminLoginPass(e.target.value)}
+                className="w-full rounded-lg border border-[#cbd5e1] px-3.5 py-2 text-sm text-[#0f172a] focus:border-[#1664ff] focus:outline-none"
+                placeholder="••••••••"
+              />
+            </div>
+
+            {adminLoginError && (
+              <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-600">
+                {adminLoginError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={adminLoggingIn}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#1664ff] py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#1251db] transition-colors disabled:opacity-60"
+            >
+              {adminLoggingIn && <Loader2 size={16} className="animate-spin" />}
+              <span>{language === 'zh' ? '登录管理后台' : 'Sign in to Console'}</span>
+            </button>
+          </form>
+
+          <div className="mt-6 border-t border-[#f1f5f9] pt-4 flex items-center justify-between text-xs text-[#64748b]">
+            <Link href="/" className="hover:text-[#1664ff] transition-colors">
+              ← {language === 'zh' ? '返回普通工作台' : 'Back to Workbench'}
+            </Link>
+            {username && (
+              <button
+                type="button"
+                onClick={() => logout()}
+                className="hover:text-rose-600 transition-colors"
+              >
+                {language === 'zh' ? '退出当前账号' : 'Sign Out'}
+              </button>
+            )}
+          </div>
         </div>
-        <h1 className="text-xl font-bold text-ink">
-          {language === 'zh' ? '访问受限：需要管理员权限' : 'Access Restricted: Administrator Only'}
-        </h1>
-        <p className="max-w-md text-sm text-ink-dim">
-          {language === 'zh'
-            ? '当前登录账户不是系统管理员，无法访问此后台。请使用管理员账户登录。'
-            : 'Your current account does not have administrator privileges to access this console.'}
-        </p>
-        <Link href="/" className="btn btn-primary mt-2">
-          {language === 'zh' ? '返回工作台' : 'Back to Workbench'}
-        </Link>
       </div>
     )
   }

@@ -105,10 +105,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/extensions/', id: 'extensions', label: '应用与插件', icon: Package },
     { href: '/groups/', id: 'groups', label: '环境分组', icon: FolderTree },
     { href: '/schedules/', id: 'schedules', label: '定时计划', icon: Layers },
-    { href: '/api-service/', id: 'api-service', label: '开发者中心', icon: Terminal },
-    { href: '/trash/', id: 'trash', label: '回收站', icon: Trash2 },
-    { href: '/settings/', id: 'settings', label: '系统设置', icon: Settings },
   ]
+
+  if (current.startsWith('/5DRnDsWW')) {
+    return <>{children}</>
+  }
 
   return (
     <div className="flex h-screen flex-col bg-[#f4f6fa] select-none text-[#1e293b]">

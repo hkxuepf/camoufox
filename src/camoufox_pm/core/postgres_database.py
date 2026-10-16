@@ -441,6 +441,34 @@ class PostgresDatabaseManager:
                      WHERE id = $2
                 """, status, profile_id)
 
+    async def acquire_recovery_lock(self, holder: str, ttl_seconds: int) -> bool:
+        async with self._pool.acquire() as conn:
+            res = await conn.execute(
+                """
+                UPDATE recovery_lock
+                   SET holder = $1, expires = CURRENT_TIMESTAMP + ($2 || ' seconds')::interval
+                 WHERE id = 1 AND (holder IS NULL OR holder = $1 OR expires < CURRENT_TIMESTAMP)
+                """,
+                holder,
+                str(ttl_seconds),
+            )
+            return "UPDATE 1" in res
+
+    async def release_recovery_lock(self, holder: str) -> None:
+        async with self._pool.acquire() as conn:
+            await conn.execute("UPDATE recovery_lock SET holder = NULL, expires = NULL WHERE id = 1 AND holder = $1", holder)
+
+    async def get_lease_holders(self) -> list[dict]:
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, name, locked_by, lock_expires
+                  FROM profiles
+                 WHERE locked_by IS NOT NULL AND lock_expires > CURRENT_TIMESTAMP
+                """
+            )
+            return [dict(r) for r in rows]
+
     # --- Schedule Methods ---
 
     async def save_schedule(self, schedule: Schedule) -> None:

@@ -2108,100 +2108,100 @@ class StorageManager:
         return await self.db.get_lease(profile_id)
 
     async def get_lease_holders(self) -> list[dict]:
-        return await self.db.get_lease_holders()
+        return await self._get_handler("get_lease_holders")()
 
     async def acquire_recovery_lock(self, holder: str, ttl_seconds: int) -> bool:
-        return await self.db.acquire_recovery_lock(holder, ttl_seconds)
+        return await self._get_handler("acquire_recovery_lock")(holder, ttl_seconds)
 
     async def release_recovery_lock(self, holder: str) -> None:
-        await self.db.release_recovery_lock(holder)
+        await self._get_handler("release_recovery_lock")(holder)
 
     # Proxy pool methods
     async def create_proxy(self, data: dict) -> dict:
-        return await self.db.create_proxy(data)
+        return await self._get_handler("create_proxy")(data)
 
     async def batch_create_proxies(self, proxies_list: list[dict], user_id: str | None = None) -> int:
-        return await self.db.batch_create_proxies(proxies_list, user_id)
+        return await self._get_handler("batch_create_proxies")(proxies_list, user_id)
 
     async def get_proxy(self, proxy_id: str) -> dict | None:
-        return await self.db.get_proxy(proxy_id)
+        return await self._get_handler("get_proxy")(proxy_id)
 
     async def list_proxies(self, user_id: str | None = None) -> list[dict]:
-        return await self.db.list_proxies(user_id)
+        return await self._get_handler("list_proxies")(user_id)
 
     async def update_proxy(self, proxy_id: str, updates: dict) -> bool:
-        return await self.db.update_proxy(proxy_id, updates)
+        return await self._get_handler("update_proxy")(proxy_id, updates)
 
     async def delete_proxy(self, proxy_id: str) -> bool:
-        return await self.db.delete_proxy(proxy_id)
+        return await self._get_handler("delete_proxy")(proxy_id)
 
     async def delete_proxies_batch(self, proxy_ids: list[str]) -> int:
-        return await self.db.delete_proxies_batch(proxy_ids)
+        return await self._get_handler("delete_proxies_batch")(proxy_ids)
 
     # Extension methods
     async def list_extensions(self) -> list[dict]:
-        return await self.db.list_extensions()
+        return await self._get_handler("list_extensions")()
 
     async def get_extension(self, ext_id: str) -> dict | None:
-        return await self.db.get_extension(ext_id)
+        return await self._get_handler("get_extension")(ext_id)
 
     async def create_extension(self, data: dict) -> dict:
-        return await self.db.create_extension(data)
+        return await self._get_handler("create_extension")(data)
 
     async def update_extension(self, ext_id: str, updates: dict) -> bool:
-        return await self.db.update_extension(ext_id, updates)
+        return await self._get_handler("update_extension")(ext_id, updates)
 
     async def delete_extension(self, ext_id: str) -> bool:
-        return await self.db.delete_extension(ext_id)
+        return await self._get_handler("delete_extension")(ext_id)
 
     # Releases methods
     async def list_client_releases(self, active_only: bool = False) -> list[dict]:
-        return await self.db.list_client_releases(active_only)
+        return await self._get_handler("list_client_releases")(active_only)
 
     async def get_client_release(self, release_id: str) -> dict | None:
-        return await self.db.get_client_release(release_id)
+        return await self._get_handler("get_client_release")(release_id)
 
     async def get_latest_client_release(self) -> dict | None:
-        return await self.db.get_latest_client_release()
+        return await self._get_handler("get_latest_client_release")()
 
     async def create_client_release(self, data: dict) -> dict:
-        return await self.db.create_client_release(data)
+        return await self._get_handler("create_client_release")(data)
 
     async def update_client_release(self, release_id: str, updates: dict) -> bool:
-        return await self.db.update_client_release(release_id, updates)
+        return await self._get_handler("update_client_release")(release_id, updates)
 
     async def delete_client_release(self, release_id: str) -> bool:
-        return await self.db.delete_client_release(release_id)
+        return await self._get_handler("delete_client_release")(release_id)
 
     async def list_kernel_releases(self, engine: str | None = None, active_only: bool = False) -> list[dict]:
-        return await self.db.list_kernel_releases(engine, active_only)
+        return await self._get_handler("list_kernel_releases")(engine, active_only)
 
     async def get_kernel_release(self, release_id: str) -> dict | None:
-        return await self.db.get_kernel_release(release_id)
+        return await self._get_handler("get_kernel_release")(release_id)
 
     async def create_kernel_release(self, data: dict) -> dict:
-        return await self.db.create_kernel_release(data)
+        return await self._get_handler("create_kernel_release")(data)
 
     async def update_kernel_release(self, release_id: str, updates: dict) -> bool:
-        return await self.db.update_kernel_release(release_id, updates)
+        return await self._get_handler("update_kernel_release")(release_id, updates)
 
     async def delete_kernel_release(self, release_id: str) -> bool:
-        return await self.db.delete_kernel_release(release_id)
+        return await self._get_handler("delete_kernel_release")(release_id)
 
     # Snapshot methods (时光机)
     async def record_profile_snapshot(
         self, profile_id: str, snapshot_name: str, size_kb: float, r2_key: str
     ) -> dict:
-        return await self.db.record_profile_snapshot(profile_id, snapshot_name, size_kb, r2_key)
+        return await self._get_handler("record_profile_snapshot")(profile_id, snapshot_name, size_kb, r2_key)
 
     async def list_profile_snapshots(self, profile_id: str) -> list[dict]:
-        return await self.db.list_profile_snapshots(profile_id)
+        return await self._get_handler("list_profile_snapshots")(profile_id)
 
     async def get_profile_snapshot(self, snapshot_id: str) -> dict | None:
-        return await self.db.get_profile_snapshot(snapshot_id)
+        return await self._get_handler("get_profile_snapshot")(snapshot_id)
 
     async def delete_profile_snapshot(self, snapshot_id: str) -> bool:
-        return await self.db.delete_profile_snapshot(snapshot_id)
+        return await self._get_handler("delete_profile_snapshot")(snapshot_id)
 
     async def close(self):
         """Close the database."""

@@ -426,9 +426,15 @@ class DatabaseManager:
                 'https://github.com/hkxuepf/camoufox/releases/download/v155.0/chromium-155.0.8059-win-x64.zip'
             ),
             (
+                'kr_cloak_146', 'chromium', '146.0.7680', 'Chrome 146 (CloakBrowser 87项C++补丁纯净无锁内核)',
+                '基于 Chromium 146 纯离线无锁免鉴权运行，深度剥离所有商业鉴权与并发限制', 0, 1,
+                'https://github.com/hkxuepf/camoufox/releases/download/v146.0/cloak-chromium-146.0.7680-mac-arm64.tar.gz',
+                'https://github.com/hkxuepf/camoufox/releases/download/v146.0/cloak-chromium-146.0.7680-win-x64.zip'
+            ),
+            (
                 'kr_fox_135', 'camoufox', '135.0-beta.36', 'Camoufox 135 (Gecko 原生防关联内核)',
                 '基于 Firefox 135 ESR 真实渲染引擎，完美支持桌面指纹仿真', 1, 1,
-                'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-mac-arm64.tar.gz',
+                'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-mac-arm64.zip',
                 'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-win-x64.zip'
             )
         """)

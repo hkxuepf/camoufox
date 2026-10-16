@@ -227,7 +227,7 @@ export default function AdminConsolePage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas text-ink">
+    <div className="flex min-h-full flex-col bg-canvas text-ink">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-xs font-medium text-ink shadow-2xl animate-in fade-in slide-in-from-bottom-2">

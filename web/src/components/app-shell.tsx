@@ -107,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: '/schedules/', id: 'schedules', label: '定时计划', icon: Layers },
   ]
 
-  if (current.startsWith('/5DRnDsWW')) {
+  if (current.startsWith('/5DRnDsWW') && !isAdmin) {
     return <>{children}</>
   }
 
@@ -117,7 +117,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="flex h-[46px] shrink-0 items-center justify-between border-b border-[#eaedf1] bg-white px-3.5 z-20">
         {/* Left: Brand Logo & Title */}
         <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href={isAdmin ? '/5DRnDsWW/' : '/'} className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo.png" alt="CamouHub" className="h-7 w-7 object-contain select-none" />
             <div className="flex items-baseline gap-0.5">
@@ -282,7 +282,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             /* Admin navigation */
             <div className="flex flex-col gap-1 p-2">
               <div className="px-2.5 py-2 text-[11px] font-semibold text-[#94a3b8] uppercase">
-                管理控制台
+                {language === 'zh' ? '管理控制台' : 'ADMIN CONSOLE'}
               </div>
               {ADMIN_NAV_ITEMS.map((item) => {
                 const Icon = item.icon
@@ -299,7 +299,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     }`}
                   >
                     <Icon size={15} strokeWidth={1.8} className={active ? 'text-[#1664ff]' : ''} />
-                    <span>{item.labelZh}</span>
+                    <span>{language === 'zh' ? item.labelZh : item.labelEn}</span>
                   </button>
                 )
               })}
@@ -368,7 +368,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Right Work Content Area */}
-        <main className="min-w-0 flex-1 overflow-y-auto bg-[#f4f6fa] p-3">
+        <main className="min-w-0 flex-1 overflow-y-auto bg-[#f4f6fa]">
           {children}
         </main>
       </div>

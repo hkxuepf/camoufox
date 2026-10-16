@@ -432,10 +432,52 @@ class DatabaseManager:
                 'https://github.com/hkxuepf/camoufox/releases/download/v146.0/cloak-chromium-146.0.7680-win-x64.zip'
             ),
             (
+                'kr_cloak_145', 'chromium', '145.0.7632', 'Chrome 145 (CloakBrowser 稳定版 · 免鉴权)',
+                '经典稳定防关联版本，原生 Metal/D3D11 渲染扰动，完美对抗高级指纹风控', 0, 1,
+                'https://github.com/CloakHQ/CloakBrowser/releases/download/chromium-v145.0.7632.109.2/cloakbrowser-darwin-arm64.tar.gz',
+                'https://github.com/CloakHQ/CloakBrowser/releases/download/chromium-v145.0.7632.109.2/cloakbrowser-windows-x64.zip'
+            ),
+            (
+                'kr_cloak_142', 'chromium', '142.0.7444', 'Chrome 142 (CloakBrowser 经典长周期内核)',
+                '适合长周期海外社媒/广告老账号，提供完全一致的低版本 V8 指纹特征基准', 0, 1,
+                'https://github.com/CloakHQ/CloakBrowser/releases/download/chromium-v142.0.7444.175/cloakbrowser-darwin-arm64.tar.gz',
+                'https://github.com/CloakHQ/CloakBrowser/releases/download/chromium-v145.0.7632.109.2/cloakbrowser-windows-x64.zip'
+            ),
+            (
+                'kr_fox_156', 'camoufox', '156.0.1', 'Camoufox 156 (Gecko 最新高阶防关联内核)',
+                '同步官方最新安全更新与指纹补丁库，完美支持高级 WebGL2 与音频指纹混淆', 0, 1,
+                'https://github.com/daijro/camoufox/releases/download/v156.0.1-beta.36/camoufox-156.0.1-beta.36-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v156.0.1-beta.36/camoufox-156.0.1-beta.36-win.x86_64.zip'
+            ),
+            (
+                'kr_fox_152', 'camoufox', '152.0.4', 'Camoufox 152 (Gecko 历史稳定版)',
+                '中间代稳态 Gecko 渲染引擎，适合各类跨境电商与海外私域矩阵长效保活', 0, 1,
+                'https://github.com/daijro/camoufox/releases/download/v152.0.4-beta.30/camoufox-152.0.4-beta.30-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v152.0.4-beta.30/camoufox-152.0.4-beta.30-win.x86_64.zip'
+            ),
+            (
                 'kr_fox_135', 'camoufox', '135.0-beta.36', 'Camoufox 135 (Gecko 原生防关联内核)',
                 '基于 Firefox 135 ESR 真实渲染引擎，完美支持桌面指纹仿真', 1, 1,
                 'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-mac-arm64.zip',
                 'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-win-x64.zip'
+            ),
+            (
+                'kr_fox_132', 'camoufox', '132.0.2', 'Camoufox 132 (Gecko 经典历史版)',
+                '经典历史版本，提供低版本 Firefox 特征库，彻底杜绝 UA 伪造穿帮风险', 0, 1,
+                'https://github.com/daijro/camoufox/releases/download/v132.0.2-beta.17/camoufox-132.0.2-beta.17-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v132.0.2-beta.17/camoufox-132.0.2-beta.17-win.x86_64.zip'
+            ),
+            (
+                'kr_fox_130', 'camoufox', '130.0.1', 'Camoufox 130 (Gecko 经典历史版)',
+                '早期经典防关联内核版本，完整支持 Cookie 会话直投与代理无感透传', 0, 1,
+                'https://github.com/daijro/camoufox/releases/download/v130.0.1-beta.13/camoufox-130.0.1-beta.13-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v130.0.1-beta.13/camoufox-130.0.1-beta.13-win.x86_64.zip'
+            ),
+            (
+                'kr_fox_129', 'camoufox', '129.0', 'Camoufox 129 (Gecko 首批长周期基准版)',
+                '超长周期基准内核，专为跨越多年建立信誉权重的陈年老账号终身锁定服务', 0, 1,
+                'https://github.com/daijro/camoufox/releases/download/v129.0-beta.4/camoufox-129.0-beta.4-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v129.0-beta.4/camoufox-129.0-beta.4-win.x86_64.zip'
             )
         """)
 

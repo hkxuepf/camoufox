@@ -1084,7 +1084,8 @@ class PostgresDatabaseManager:
 
     async def get_admin_dashboard_stats(self) -> dict:
         async with self._pool.acquire() as conn:
-            user_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+            user_count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE role != 'admin'") or 0
+            admin_count = await conn.fetchval("SELECT COUNT(*) FROM users WHERE role = 'admin'") or 0
             profile_count = await conn.fetchval("SELECT COUNT(*) FROM profiles WHERE deleted_at IS NULL") or 0
             active_running = await conn.fetchval(
                 "SELECT COUNT(*) FROM profiles WHERE locked_by IS NOT NULL AND lock_expires > CURRENT_TIMESTAMP"
@@ -1094,6 +1095,7 @@ class PostgresDatabaseManager:
             total_revenue = await conn.fetchval("SELECT COALESCE(SUM(amount_usdt), 0) FROM orders WHERE status = 'paid'") or 0.0
             return {
                 "user_count": user_count,
+                "admin_count": admin_count,
                 "profile_count": profile_count,
                 "active_running": active_running,
                 "total_orders": total_orders,

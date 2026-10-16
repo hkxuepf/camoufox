@@ -1121,7 +1121,8 @@ class DatabaseManager:
         self._connection.commit()
 
     async def get_admin_dashboard_stats(self) -> dict:
-        user_count = self._connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        user_count = self._connection.execute("SELECT COUNT(*) FROM users WHERE role != 'admin'").fetchone()[0]
+        admin_count = self._connection.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
         profile_count = self._connection.execute(
             "SELECT COUNT(*) FROM profiles WHERE deleted_at IS NULL"
         ).fetchone()[0]
@@ -1137,6 +1138,7 @@ class DatabaseManager:
         ).fetchone()[0]
         return {
             "user_count": user_count,
+            "admin_count": admin_count,
             "profile_count": profile_count,
             "active_running": active_running,
             "total_orders": total_orders,

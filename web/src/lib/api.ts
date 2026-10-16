@@ -797,6 +797,7 @@ export interface Order {
 
 export interface AdminStats {
   user_count: number
+  admin_count?: number
   profile_count: number
   active_running: number
   total_orders: number

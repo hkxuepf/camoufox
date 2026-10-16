@@ -277,14 +277,16 @@ export default function AdminConsolePage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-line bg-surface p-4">
                 <div className="flex items-center justify-between text-ink-dim">
-                  <span className="text-xs">{language === 'zh' ? '总注册用户' : 'Total Users'}</span>
+                  <span className="text-xs">{language === 'zh' ? '客户账号总数' : 'Total Clients'}</span>
                   <Users size={16} className="text-signal" />
                 </div>
                 <div className="mt-2 text-2xl font-bold text-ink">
                   {stats?.user_count ?? '—'}
                 </div>
                 <div className="mt-1 text-[11px] text-ink-dim">
-                  {language === 'zh' ? '系统已注册账号总数' : 'Registered user accounts'}
+                  {language === 'zh'
+                    ? `已注册客户 ${stats?.user_count ?? 0} 人 / 平台管理员 ${stats?.admin_count ?? 1} 人`
+                    : `${stats?.user_count ?? 0} clients / ${stats?.admin_count ?? 1} admins`}
                 </div>
               </div>
 

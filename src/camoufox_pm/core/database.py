@@ -456,10 +456,10 @@ class DatabaseManager:
                 'https://github.com/daijro/camoufox/releases/download/v152.0.4-beta.30/camoufox-152.0.4-beta.30-win.x86_64.zip'
             ),
             (
-                'kr_fox_135', 'camoufox', '135.0-beta.36', 'Camoufox 135 (Gecko 原生防关联内核)',
+                'kr_fox_135', 'camoufox', '135.0.1', 'Camoufox 135 (Gecko 原生防关联内核)',
                 '基于 Firefox 135 ESR 真实渲染引擎，完美支持桌面指纹仿真', 1, 1,
-                'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-mac-arm64.zip',
-                'https://github.com/hkxuepf/camoufox/releases/download/v135.0/camoufox-135.0-win-x64.zip'
+                'https://github.com/daijro/camoufox/releases/download/v135.0.1-beta.24/camoufox-135.0.1-beta.24-mac.arm64.zip',
+                'https://github.com/daijro/camoufox/releases/download/v135.0.1-beta.24/camoufox-135.0.1-beta.24-win.x86_64.zip'
             ),
             (
                 'kr_fox_134', 'camoufox', '134.0.2', 'Camoufox 134 (Gecko 稳定过渡版)',

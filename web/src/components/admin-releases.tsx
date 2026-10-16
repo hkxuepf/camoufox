@@ -178,10 +178,29 @@ export function AdminReleasesView({ language }: AdminReleasesProps) {
     }
   }
 
-  const filteredKernels = kernelReleases.filter((k) => {
-    if (kernelFilter === 'all') return true
-    return k.engine === kernelFilter
-  })
+  const filteredKernels = [...kernelReleases]
+    .filter((k) => {
+      if (kernelFilter === 'all') return true
+      return k.engine === kernelFilter
+    })
+    .sort((a, b) => {
+      // 1. Recommended first
+      if (a.is_recommended && !b.is_recommended) return -1
+      if (!a.is_recommended && b.is_recommended) return 1
+
+      // 2. Semver version parse descending
+      const parseVer = (v: string) => {
+        return v.replace(/^[^\d]*/, '').split(/[-._]/).map((n) => parseInt(n) || 0)
+      }
+      const pa = parseVer(a.version)
+      const pb = parseVer(b.version)
+      for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const na = pa[i] ?? 0
+        const nb = pb[i] ?? 0
+        if (na !== nb) return nb - na
+      }
+      return b.version.localeCompare(a.version)
+    })
 
   return (
     <div className="space-y-6">
